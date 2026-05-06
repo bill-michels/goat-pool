@@ -22,7 +22,6 @@ export default async function PlayerPage() {
   ]);
 
   const allPoolIds = (memberships ?? []).map((m: any) => (m.pools as any)?.id).filter(Boolean) as string[];
-  const activeMemberships = (memberships ?? []).filter((m: any) => (m.pools as any)?.status === "active");
   const tournamentIds = Array.from(
     new Set(
       (memberships ?? []).map((m: any) => (m.pools as any)?.tournaments?.id ?? (m.pools as any)?.tournament_id)
