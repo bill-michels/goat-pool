@@ -52,7 +52,7 @@ export default async function AdminPage() {
   ] = await Promise.all([
     adminClient.from("users").select("username, role").eq("id", user.id).single(),
     adminClient.from("users").select("*", { count: "exact", head: true }),
-    adminClient.from("tournaments").select("id, name, num_rounds, status").eq("status", "active").maybeSingle(),
+    adminClient.from("tournaments").select("id, name, num_rounds, status").in("status", ["upcoming", "active"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     adminClient.from("tournaments").select("id, name, status").eq("status", "concluded").order("created_at", { ascending: false }),
     adminClient.from("pools").select("id, name, commissioner_id, status, pool_players(count)").eq("status", "active"),
     adminClient.from("payments").select("amount").eq("status", "completed"),
@@ -126,20 +126,26 @@ export default async function AdminPage() {
 
         {/* Live Tournament */}
         <div style={{ marginBottom: "32px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-            <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: activeTournament ? c.green : c.gray }} />
-            <h2 style={{ fontSize: "18px", fontWeight: 700, color: c.charcoal, margin: 0 }}>
-              Live Tournament
-            </h2>
-          </div>
+          <h2 style={{ fontSize: "18px", fontWeight: 700, color: c.charcoal, margin: "0 0 16px" }}>
+            Live or Upcoming Tournaments
+          </h2>
 
           {activeTournament ? (
             <div style={{ backgroundColor: c.white, borderRadius: "14px", padding: "24px", border: `1px solid ${c.grayLight}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
                 <div>
-                  <h3 style={{ fontSize: "20px", fontWeight: 700, color: c.charcoal, margin: "0 0 4px" }}>
-                    {activeTournament.name}
-                  </h3>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+                    <h3 style={{ fontSize: "20px", fontWeight: 700, color: c.charcoal, margin: 0 }}>
+                      {activeTournament.name}
+                    </h3>
+                    <span style={{
+                      fontSize: "12px", fontWeight: 600, padding: "3px 8px", borderRadius: "6px",
+                      backgroundColor: activeTournament.status === "active" ? c.greenMuted : c.amberMuted,
+                      color: activeTournament.status === "active" ? c.green : c.amber,
+                    }}>
+                      {activeTournament.status === "active" ? "Active" : "Upcoming"}
+                    </span>
+                  </div>
                   <p style={{ fontSize: "14px", color: c.gray, margin: 0 }}>
                     {activeTournament.num_rounds} rounds total
                   </p>
@@ -189,7 +195,7 @@ export default async function AdminPage() {
             </div>
           ) : (
             <div style={{ backgroundColor: c.white, borderRadius: "14px", padding: "32px", border: `1px solid ${c.grayLight}`, textAlign: "center" }}>
-              <p style={{ fontSize: "16px", color: c.gray, margin: "0 0 16px" }}>No active tournament.</p>
+              <p style={{ fontSize: "16px", color: c.gray, margin: "0 0 16px" }}>No active or upcoming tournament.</p>
               <Link href="/admin/tournamentsetup" style={{
                 padding: "10px 20px", borderRadius: "10px",
                 background: c.green, color: c.white,

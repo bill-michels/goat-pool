@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const c = {
@@ -28,8 +27,14 @@ function LogoIcon({ size = 32 }: { size?: number }) {
   );
 }
 
+const NAV_LINKS = [
+  { label: "Overview", href: "/admin" },
+  { label: "Tournaments", href: "/admin/tournamentsetup" },
+  { label: "Metrics", href: "/admin/metrics" },
+] as const;
+
 export default function AdminNav({ username }: { username: string }) {
-  const [activeTab, setActiveTab] = useState("Overview");
+  const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
 
@@ -72,20 +77,27 @@ export default function AdminNav({ username }: { username: string }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        {["Overview", "Tournaments", "Metrics"].map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={{
-            padding: "8px 16px",
-            borderRadius: "8px",
-            border: "none",
-            background: activeTab === tab ? c.greenMuted : "transparent",
-            color: activeTab === tab ? c.green : c.gray,
-            fontSize: "15px",
-            fontWeight: 500,
-            cursor: "pointer",
-          }}>
-            {tab}
-          </button>
-        ))}
+        {NAV_LINKS.map(({ label, href }) => {
+          const isActive = href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
+          const isDisabled = href === "/admin/metrics";
+          return isDisabled ? (
+            <span key={label} style={{
+              padding: "8px 16px", borderRadius: "8px",
+              color: c.grayLight, fontSize: "15px", fontWeight: 500, cursor: "default",
+            }}>
+              {label}
+            </span>
+          ) : (
+            <Link key={label} href={href} style={{
+              padding: "8px 16px", borderRadius: "8px", textDecoration: "none",
+              background: isActive ? c.greenMuted : "transparent",
+              color: isActive ? c.green : c.gray,
+              fontSize: "15px", fontWeight: 500,
+            }}>
+              {label}
+            </Link>
+          );
+        })}
 
         <div style={{ width: "1px", height: "24px", backgroundColor: c.grayLight, margin: "0 8px" }} />
 

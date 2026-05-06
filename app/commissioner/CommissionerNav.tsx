@@ -55,7 +55,7 @@ export default function CommissionerNav({
       top: 0,
       zIndex: 100,
     }}>
-      <Link href="/commissioner/dash" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
+      <Link href="/commissioner" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
         <LogoIcon size={36} />
         <span style={{ fontSize: "22px", fontWeight: 700, color: c.charcoal, letterSpacing: "-0.5px" }}>
           Goat Pool
@@ -63,7 +63,7 @@ export default function CommissionerNav({
       </Link>
 
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <Link href="/commissioner/dash" style={{
+        <Link href="/commissioner" style={{
           padding: "8px 16px", borderRadius: "8px", textDecoration: "none",
           background: c.greenMuted, color: c.green, fontSize: "15px", fontWeight: 500,
         }}>

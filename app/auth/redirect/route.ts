@@ -40,8 +40,8 @@ export async function GET(request: NextRequest) {
   const dest = role === "admin"
     ? "/admin"
     : role === "commissioner"
-    ? "/commissioner/dash"
-    : "/player/dash";
+    ? "/commissioner"
+    : "/player";
 
   return NextResponse.redirect(`${origin}${dest}`);
 }

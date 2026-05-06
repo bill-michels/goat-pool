@@ -20,10 +20,13 @@ const c = {
   redMuted: "#FEF2F2",
 };
 
-const ROUND_LABELS = ["Round 1", "Round 2", "Round 3", "Round 4", "QF", "SF", "Final"];
-
-function roundLabel(i: number) {
-  return ROUND_LABELS[i] ?? `Round ${i + 1}`;
+// Labels count from the END of the draw: Final, SF, QF, then Round N from start
+function roundLabel(roundNumber: number, totalRounds: number): string {
+  const fromEnd = totalRounds - roundNumber;
+  if (fromEnd === 0) return "Final";
+  if (fromEnd === 1) return "SF";
+  if (fromEnd === 2) return "QF";
+  return `Round ${roundNumber}`;
 }
 
 function LogoIcon({ size = 32 }: { size?: number }) {
@@ -98,24 +101,64 @@ function CreateTournament({
   const supabase = createClient();
   const [name, setName] = useState(initialTournament?.name ?? "");
   const [numRounds, setNumRounds] = useState(String(initialTournament?.num_rounds ?? 7));
+
+  // Confirmed deadlines stored as ISO strings
   const [deadlines, setDeadlines] = useState<Record<number, string>>(() => {
     const d: Record<number, string> = {};
     initialRounds.forEach((r) => {
-      if (r.lock_deadline) d[r.round_number] = r.lock_deadline.slice(0, 16);
+      if (r.lock_deadline) d[r.round_number] = r.lock_deadline;
     });
     return d;
   });
+
+  // Temporary date/time input values while editing
+  const [inputs, setInputs] = useState<Record<number, { date: string; time: string }>>(() => {
+    const init: Record<number, { date: string; time: string }> = {};
+    initialRounds.forEach((r) => {
+      if (r.lock_deadline) {
+        const d = new Date(r.lock_deadline);
+        init[r.round_number] = {
+          date: d.toISOString().slice(0, 10),
+          time: d.toTimeString().slice(0, 5),
+        };
+      }
+    });
+    return init;
+  });
+
+  // Rounds currently showing the input form (vs. confirmed display)
+  const [editingRounds, setEditingRounds] = useState<Set<number>>(new Set());
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const roundCount = Math.min(Math.max(Number(numRounds) || 0, 1), 10);
+  const roundCount = Math.min(Math.max(parseInt(numRounds) || 0, 1), 10);
+
+  const setInput = (roundNum: number, field: "date" | "time", val: string) => {
+    setInputs((prev) => ({ ...prev, [roundNum]: { ...(prev[roundNum] ?? { date: "", time: "" }), [field]: val } }));
+  };
+
+  const confirmDeadline = (roundNum: number) => {
+    const inp = inputs[roundNum];
+    if (!inp?.date) return;
+    const iso = new Date(`${inp.date}T${inp.time || "00:00"}`).toISOString();
+    setDeadlines((prev) => ({ ...prev, [roundNum]: iso }));
+    setEditingRounds((prev) => { const s = new Set(prev); s.delete(roundNum); return s; });
+  };
+
+  const startEditing = (roundNum: number) => {
+    setEditingRounds((prev) => new Set(Array.from(prev).concat(roundNum)));
+  };
+
+  const clearDeadline = (roundNum: number) => {
+    setDeadlines((prev) => { const n = { ...prev }; delete n[roundNum]; return n; });
+    setInputs((prev) => { const n = { ...prev }; delete n[roundNum]; return n; });
+    setEditingRounds((prev) => { const s = new Set(prev); s.delete(roundNum); return s; });
+  };
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError("Tournament name is required."); return; }
     if (!numRounds || roundCount < 1) { setError("Number of rounds is required."); return; }
-    for (let i = 1; i <= roundCount; i++) {
-      if (!deadlines[i]) { setError(`Lock deadline required for ${roundLabel(i - 1)}.`); return; }
-    }
 
     setLoading(true);
     setError(null);
@@ -128,15 +171,19 @@ function CreateTournament({
         .insert({ name: name.trim(), num_rounds: roundCount, status: "upcoming", created_by: userId })
         .select()
         .single();
-      if (tErr) { setError(tErr.message); setLoading(false); return; }
+      if (tErr) {
+        setError(tErr.message.includes("unique") || tErr.message.includes("duplicate")
+          ? "A tournament with that name already exists. Use a different name."
+          : tErr.message);
+        setLoading(false); return;
+      }
       tournament = data;
     }
 
-    // Upsert rounds
     const roundsPayload = Array.from({ length: roundCount }, (_, i) => ({
       tournament_id: tournament.id,
       round_number: i + 1,
-      lock_deadline: new Date(deadlines[i + 1]).toISOString(),
+      lock_deadline: deadlines[i + 1] ?? null,
       status: i === 0 ? "active" : "upcoming",
     }));
 
@@ -193,16 +240,18 @@ function CreateTournament({
             Number of Rounds
           </label>
           <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 8px" }}>
-            For Grand Slams this is typically 7 (128-draw).
+            Grand Slams are typically 7 rounds (128-draw). Smaller tournaments may have 3–5.
           </p>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
             placeholder="7"
             value={numRounds}
-            min={1}
-            max={10}
-            onChange={(e) => setNumRounds(e.target.value)}
-            style={{ ...inputStyle(), maxWidth: "120px" }}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, "");
+              setNumRounds(v);
+            }}
+            style={{ ...inputStyle(), maxWidth: "100px" }}
           />
         </div>
 
@@ -210,27 +259,95 @@ function CreateTournament({
           <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: c.charcoal, marginBottom: "6px" }}>
             Round Lock Deadlines
           </label>
-          <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 10px" }}>
-            Set the pick submission deadline for each round. You can adjust these as play develops.
+          <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 12px" }}>
+            The deadline players must submit their pick by. You can set these later once the schedule is confirmed.
           </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {Array.from({ length: roundCount }, (_, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ fontSize: "14px", fontWeight: 600, color: c.charcoal, minWidth: "70px" }}>
-                  {roundLabel(i)}
-                </span>
-                <input
-                  type="datetime-local"
-                  value={deadlines[i + 1] ?? ""}
-                  onChange={(e) => setDeadlines((prev) => ({ ...prev, [i + 1]: e.target.value }))}
-                  style={{
-                    flex: 1, padding: "10px 12px",
-                    border: `1.5px solid ${c.grayLight}`, borderRadius: "8px",
-                    fontSize: "14px", color: c.charcoal,
-                  }}
-                />
-              </div>
-            ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {Array.from({ length: roundCount }, (_, i) => {
+              const roundNum = i + 1;
+              const confirmed = deadlines[roundNum];
+              const isEditing = editingRounds.has(roundNum) || !confirmed;
+              const inp = inputs[roundNum] ?? { date: "", time: "" };
+
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "14px", fontWeight: 600, color: c.charcoal, minWidth: "72px" }}>
+                    {roundLabel(roundNum, roundCount)}
+                  </span>
+
+                  {isEditing ? (
+                    <>
+                      <input
+                        type="date"
+                        value={inp.date}
+                        onChange={(e) => setInput(roundNum, "date", e.target.value)}
+                        style={{
+                          padding: "9px 10px", border: `1.5px solid ${c.grayLight}`,
+                          borderRadius: "8px", fontSize: "14px", color: c.charcoal,
+                          flex: 1,
+                        }}
+                      />
+                      <input
+                        type="time"
+                        value={inp.time}
+                        onChange={(e) => setInput(roundNum, "time", e.target.value)}
+                        style={{
+                          padding: "9px 10px", border: `1.5px solid ${c.grayLight}`,
+                          borderRadius: "8px", fontSize: "14px", color: c.charcoal,
+                          width: "145px",
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => confirmDeadline(roundNum)}
+                        disabled={!inp.date}
+                        style={{
+                          padding: "9px 14px", borderRadius: "8px", border: "none",
+                          background: inp.date ? c.green : "#9CA3AF",
+                          color: c.white, fontSize: "13px", fontWeight: 600,
+                          cursor: inp.date ? "pointer" : "not-allowed", whiteSpace: "nowrap",
+                        }}
+                      >
+                        Set
+                      </button>
+                      {confirmed && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingRounds((prev) => { const s = new Set(prev); s.delete(roundNum); return s; })}
+                          style={{ fontSize: "13px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: "4px" }}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span style={{
+                        flex: 1, fontSize: "14px", color: c.charcoal, fontWeight: 500,
+                        padding: "9px 12px", borderRadius: "8px",
+                        backgroundColor: c.greenMuted, border: `1px solid ${c.grayLight}`,
+                      }}>
+                        {new Date(confirmed!).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startEditing(roundNum)}
+                        style={{ fontSize: "13px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: "4px 8px" }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => clearDeadline(roundNum)}
+                        style={{ fontSize: "13px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: "4px 8px" }}
+                      >
+                        Clear
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -274,30 +391,52 @@ function AddAthletes({
   const supabase = createClient();
   const [athletes, setAthletes] = useState<Athlete[]>(initialAthletes);
   const [bulkText, setBulkText] = useState("");
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const nextAutoSeed = () => {
+    const existing = athletes.map((a) => a.seed);
+    let s = 100;
+    while (existing.includes(s)) s++;
+    return s;
+  };
 
   const parseBulk = () => {
     setError(null);
     const entries = bulkText.split(",").map((s) => s.trim()).filter(Boolean);
     const parsed: Athlete[] = [];
+    let autoSeed = nextAutoSeed();
+
     for (const entry of entries) {
-      const match = entry.match(/^(.+?)\s*\((\d+)\)$/);
-      if (!match) { setError(`Could not parse: "${entry}". Use format: Name (Seed)`); return; }
-      const name = match[1].trim();
-      const seed = parseInt(match[2]);
+      const withSeed = entry.match(/^(.+?)\s*\((\d+)\)$/);
+      let name: string;
+      let seed: number;
+
+      if (withSeed) {
+        name = withSeed[1].trim();
+        seed = parseInt(withSeed[2]);
+      } else {
+        name = entry.trim();
+        seed = autoSeed++;
+      }
+
+      if (!name) continue;
       if (athletes.some((a) => a.seed === seed) || parsed.some((a) => a.seed === seed)) {
         setError(`Duplicate seed ${seed}.`); return;
       }
-      parsed.push({ name, seed, has_bye: seed <= 4, status: "active" });
+      parsed.push({ name, seed, has_bye: false, status: "active" });
     }
-    setAthletes((prev) => [...prev, ...parsed].sort((a, b) => a.seed - b.seed));
+
+    setAthletes((prev) =>
+      [...prev, ...parsed].sort((a, b) => a.seed - b.seed)
+    );
     setBulkText("");
   };
 
   const toggleBye = (seed: number) => {
-    setAthletes((prev) => prev.map((a) => a.seed === seed ? { ...a, has_bye: !a.has_bye } : a));
+    setAthletes((prev) =>
+      prev.map((a) => (a.seed === seed ? { ...a, has_bye: !a.has_bye } : a))
+    );
   };
 
   const removeAthlete = (seed: number) => {
@@ -324,9 +463,12 @@ function AddAthletes({
       .select();
 
     if (err) { setError(err.message); setSaving(false); return; }
-    onDone(data ?? []);
+    onDone(data ?? athletes);
     setSaving(false);
   };
+
+  const seededAthletes = athletes.filter((a) => a.seed < 100);
+  const unseededAthletes = athletes.filter((a) => a.seed >= 100);
 
   return (
     <div style={{ maxWidth: "740px", margin: "0 auto", padding: "40px" }}>
@@ -340,10 +482,9 @@ function AddAthletes({
         <span style={{ fontSize: "14px", color: c.charcoal, fontWeight: 600 }}>Athletes</span>
       </div>
 
-      <h1 style={{ fontSize: "28px", fontWeight: 800, color: c.charcoal, margin: "0 0 8px", letterSpacing: "-0.5px" }}>Add Athletes</h1>
-      <p style={{ fontSize: "15px", color: c.gray, margin: "0 0 24px" }}>
-        {tournament.name} — Add athletes with their seed and bye status.
-      </p>
+      <h1 style={{ fontSize: "28px", fontWeight: 800, color: c.charcoal, margin: "0 0 24px", letterSpacing: "-0.5px" }}>
+        Add Athletes: {tournament.name}
+      </h1>
 
       {error && (
         <div style={{ padding: "12px 14px", borderRadius: "10px", backgroundColor: c.redMuted, border: `1px solid #FECACA`, color: c.red, fontSize: "14px", marginBottom: "20px" }}>
@@ -353,14 +494,12 @@ function AddAthletes({
 
       {/* Bulk Add */}
       <div style={{ backgroundColor: c.white, borderRadius: "16px", padding: "24px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
-        <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: c.charcoal, marginBottom: "6px" }}>
-          Quick Add
-        </label>
-        <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 8px" }}>
-          Comma-separated: Name (Seed), Name (Seed), ... Seeds 1–4 get a bye by default.
+        <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 10px" }}>
+          Comma-separated list. Include a seed in parentheses to help track, but it&apos;s optional.{" "}
+          <em>e.g. Jannik Sinner (1), Carlos Alcaraz (2)</em>
         </p>
         <textarea
-          placeholder="Jannik Sinner (1), Carlos Alcaraz (2), Novak Djokovic (3), ..."
+          placeholder="Sinner (1), Alcaraz (2), Djokovic (3), Medvedev (4), ..."
           rows={3}
           value={bulkText}
           onChange={(e) => setBulkText(e.target.value)}
@@ -381,35 +520,41 @@ function AddAthletes({
             cursor: bulkText.trim() ? "pointer" : "not-allowed",
           }}
         >
-          Add Athletes
+          Add to List
         </button>
       </div>
 
       {/* Athlete List */}
       {athletes.length > 0 && (
-        <div style={{ backgroundColor: c.white, borderRadius: "14px", overflow: "hidden", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
+        <>
+          <p style={{ fontSize: "15px", fontWeight: 700, color: c.charcoal, margin: "0 0 12px" }}>
+            Total Added: {athletes.length}, Total Seeded: {seededAthletes.length}
+          </p>
+        <div style={{ backgroundColor: c.white, borderRadius: "14px", overflow: "hidden", border: `1px solid ${c.grayLight}`, marginBottom: "16px" }}>
           <div style={{
-            display: "grid", gridTemplateColumns: "0.5fr 2fr 0.8fr 0.5fr",
+            display: "grid", gridTemplateColumns: "0.5fr 2fr 1fr 0.5fr",
             padding: "12px 20px", backgroundColor: c.grayLighter,
             fontSize: "12px", fontWeight: 600, color: c.gray,
             textTransform: "uppercase", letterSpacing: "0.5px",
           }}>
-            <span>Seed</span><span>Athlete</span><span>Bye (R1)</span><span></span>
+            <span>Seed</span><span>Athlete</span><span>Bye in R1</span><span></span>
           </div>
 
           {athletes.map((a) => (
             <div key={a.seed} style={{
-              display: "grid", gridTemplateColumns: "0.5fr 2fr 0.8fr 0.5fr",
+              display: "grid", gridTemplateColumns: "0.5fr 2fr 1fr 0.5fr",
               padding: "14px 20px", fontSize: "14px",
               borderTop: `1px solid ${c.grayLight}`, alignItems: "center",
             }}>
-              <span style={{ fontWeight: 700, color: c.green }}>{a.seed}</span>
+              <span style={{ fontWeight: 700, color: a.seed < 100 ? c.green : c.gray }}>
+                {a.seed < 100 ? a.seed : "—"}
+              </span>
               <span style={{ fontWeight: 600, color: c.charcoal }}>{a.name}</span>
               <span>
                 <button
                   onClick={() => toggleBye(a.seed)}
                   style={{
-                    fontSize: "12px", fontWeight: 600, padding: "3px 8px", borderRadius: "6px",
+                    fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px",
                     border: "none", cursor: "pointer",
                     backgroundColor: a.has_bye ? c.amberMuted : c.grayLighter,
                     color: a.has_bye ? c.amber : c.gray,
@@ -429,12 +574,7 @@ function AddAthletes({
             </div>
           ))}
         </div>
-      )}
-
-      {athletes.length > 0 && (
-        <p style={{ fontSize: "13px", color: c.gray, marginBottom: "20px" }}>
-          {athletes.length} athlete{athletes.length !== 1 ? "s" : ""} added.
-        </p>
+        </>
       )}
 
       <div style={{ display: "flex", gap: "12px" }}>
@@ -477,12 +617,17 @@ function ManageTournament({
 }) {
   const supabase = createClient();
   const router = useRouter();
+  const totalRounds = rounds.length;
+
   const [activeRound, setActiveRound] = useState(
     rounds.find((r) => r.status === "active")?.round_number ?? rounds[0]?.round_number ?? 1
   );
-  const [results, setResults] = useState<Record<string, "win" | "loss">>({});
+  // Confirmed results already saved to DB
   const [savedResults, setSavedResults] = useState<Record<string, "win" | "loss">>({});
-  const [finalizing, setFinalizing] = useState(false);
+  // Pending selection the user has clicked but not yet saved
+  const [pending, setPending] = useState<Record<string, "win" | "loss">>({});
+  // Which athlete ID is currently mid-save
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const activeRoundData = rounds.find((r) => r.round_number === activeRound);
@@ -490,71 +635,71 @@ function ManageTournament({
     if (activeRound === 1) return !a.has_bye;
     return a.status === "active";
   });
+  const byeCount = activeRound === 1 ? athletes.filter((a) => a.has_bye).length : 0;
 
-  const markResult = (athleteId: string, result: "win" | "loss") => {
-    setResults((prev) => ({
-      ...prev,
-      [athleteId]: prev[athleteId] === result ? undefined as any : result,
-    }));
+  const handleSelect = (athleteId: string, result: "win" | "loss") => {
+    // If already saved as this result, do nothing
+    if (savedResults[athleteId] === result && pending[athleteId] === undefined) return;
+    // Toggle pending: clicking the same pending selection clears it
+    setPending((prev) => {
+      if (prev[athleteId] === result) {
+        const n = { ...prev }; delete n[athleteId]; return n;
+      }
+      return { ...prev, [athleteId]: result };
+    });
   };
 
-  const saveResult = async (athleteId: string, result: "win" | "loss") => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !activeRoundData) return;
+  const handleSave = async (athleteId: string) => {
+    const result = pending[athleteId];
+    if (!result || !activeRoundData) return;
 
-    await supabase.from("athlete_results").upsert({
+    setSavingId(athleteId);
+    setError(null);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingId(null); return; }
+
+    // Save result to DB
+    const { error: resErr } = await supabase.from("athlete_results").upsert({
       round_id: activeRoundData.id,
       athlete_id: athleteId,
       result,
       recorded_by: user.id,
     }, { onConflict: "round_id,athlete_id" });
 
-    setSavedResults((prev) => ({ ...prev, [athleteId]: result }));
-  };
+    if (resErr) { setError(resErr.message); setSavingId(null); return; }
 
-  const handleMarkResult = async (athleteId: string, result: "win" | "loss") => {
-    markResult(athleteId, result);
-    await saveResult(athleteId, result);
-  };
-
-  const handleFinalizeRound = async () => {
-    setFinalizing(true);
-    setError(null);
-
-    // Mark losing athletes as eliminated
-    const losers = Object.entries({ ...savedResults, ...results })
-      .filter(([, r]) => r === "loss")
-      .map(([id]) => id);
-
-    if (losers.length > 0) {
+    // Trigger elimination if loss
+    if (result === "loss") {
       await supabase.from("athletes")
         .update({ status: "eliminated", eliminated_in_round: activeRound })
-        .in("id", losers);
+        .eq("id", athleteId);
     }
 
-    // Complete this round
-    await supabase.from("rounds")
-      .update({ status: "completed" })
-      .eq("id", activeRoundData?.id);
+    // Commit locally
+    const newSaved = { ...savedResults, [athleteId]: result };
+    setSavedResults(newSaved);
+    setPending((prev) => { const n = { ...prev }; delete n[athleteId]; return n; });
+    setSavingId(null);
 
-    // Activate next round if it exists
-    const nextRound = rounds.find((r) => r.round_number === activeRound + 1);
-    if (nextRound) {
-      await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-    } else {
-      // All rounds done — conclude tournament
-      await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
+    // Auto-complete the round when every match has a saved result
+    const allDone = activeAthletes.every((a) => newSaved[a.id!] !== undefined);
+    if (allDone && activeRoundData.status !== "completed") {
+      await supabase.from("rounds").update({ status: "completed" }).eq("id", activeRoundData.id);
+      const nextRound = rounds.find((r) => r.round_number === activeRound + 1);
+      if (nextRound) {
+        await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
+      } else {
+        await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
+      }
+      router.refresh();
     }
-
-    router.refresh();
-    setFinalizing(false);
   };
 
-  const allResultsIn = activeAthletes.every((a) => results[a.id!] || savedResults[a.id!]);
-  const enteredCount = activeAthletes.filter((a) => results[a.id!] || savedResults[a.id!]).length;
+  const savedCount = activeAthletes.filter((a) => savedResults[a.id!] !== undefined).length;
 
   return (
-    <div style={{ maxWidth: "800px", margin: "0 auto", padding: "40px" }}>
+    <div style={{ maxWidth: "860px", margin: "0 auto", padding: "40px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "32px" }}>
         <Link href="/admin" style={{ fontSize: "14px", color: c.gray, textDecoration: "none" }}>Admin</Link>
         <span style={{ fontSize: "14px", color: c.grayLight }}>/</span>
@@ -609,25 +754,21 @@ function ManageTournament({
               opacity: r.status === "upcoming" ? 0.5 : 1,
             }}
           >
-            {roundLabel(r.round_number - 1)}
+            {roundLabel(r.round_number, totalRounds)}
           </button>
         ))}
       </div>
 
       {/* Results Entry */}
-      <div style={{ backgroundColor: c.white, borderRadius: "16px", padding: "24px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
+      <div style={{ backgroundColor: c.white, borderRadius: "16px", padding: "24px", border: `1px solid ${c.grayLight}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
           <div>
             <h2 style={{ fontSize: "20px", fontWeight: 700, color: c.charcoal, margin: "0 0 4px" }}>
-              {roundLabel(activeRound - 1)} — Enter Results
+              {roundLabel(activeRound, totalRounds)} Results
             </h2>
-            {activeRoundData?.lock_deadline && (
-              <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 4px" }}>
-                Lock deadline: {new Date(activeRoundData.lock_deadline).toLocaleString()}
-              </p>
-            )}
             <p style={{ fontSize: "13px", color: c.gray, margin: 0 }}>
-              {enteredCount} of {activeAthletes.length} results entered
+              {savedCount} of {activeAthletes.length} confirmed
+              {byeCount > 0 ? ` — ${byeCount} with a bye not included` : ""}
             </p>
           </div>
           <span style={{
@@ -639,68 +780,101 @@ function ManageTournament({
           </span>
         </div>
 
-        <div style={{ backgroundColor: c.grayLighter, borderRadius: "10px", overflow: "hidden" }}>
+        <div style={{ borderRadius: "10px", overflow: "hidden", border: `1px solid ${c.grayLight}` }}>
           <div style={{
-            display: "grid", gridTemplateColumns: "0.4fr 2fr 1.2fr 0.6fr",
-            padding: "10px 20px", fontSize: "12px", fontWeight: 600,
+            display: "grid", gridTemplateColumns: "0.4fr 2fr 1fr 1.8fr",
+            padding: "10px 20px", backgroundColor: c.grayLighter,
+            fontSize: "12px", fontWeight: 600,
             color: c.gray, textTransform: "uppercase", letterSpacing: "0.5px",
           }}>
             <span>Seed</span><span>Athlete</span><span>Result</span><span></span>
           </div>
 
+          {activeAthletes.length === 0 && (
+            <div style={{ padding: "24px 20px", fontSize: "14px", color: c.gray }}>
+              No athletes playing this round.
+            </div>
+          )}
+
           {activeAthletes.map((a) => {
-            const res = results[a.id!] ?? savedResults[a.id!];
+            const saved = savedResults[a.id!];
+            const sel = pending[a.id!] ?? saved;
+            const hasPendingChange = pending[a.id!] !== undefined && pending[a.id!] !== saved;
+            const isSaving = savingId === a.id;
+
             return (
               <div key={a.id} style={{
-                display: "grid", gridTemplateColumns: "0.4fr 2fr 1.2fr 0.6fr",
+                display: "grid", gridTemplateColumns: "0.4fr 2fr 1fr 1.8fr",
                 padding: "12px 20px", fontSize: "14px",
-                backgroundColor: res === "win" ? "#F0FAF3" : res === "loss" ? "#FEF8F8" : c.white,
+                backgroundColor: saved === "win" ? "#F0FAF3" : saved === "loss" ? "#FEF8F8" : c.white,
                 borderTop: `1px solid ${c.grayLight}`, alignItems: "center",
               }}>
-                <span style={{ fontWeight: 700, color: c.green }}>{a.seed}</span>
-                <span style={{ fontWeight: 600, color: c.charcoal }}>{a.name}</span>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button onClick={() => handleMarkResult(a.id!, "win")} style={{
-                    padding: "6px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer",
-                    border: res === "win" ? "none" : `1.5px solid ${c.grayLight}`,
-                    backgroundColor: res === "win" ? c.green : c.white,
-                    color: res === "win" ? c.white : c.charcoal,
-                  }}>Win</button>
-                  <button onClick={() => handleMarkResult(a.id!, "loss")} style={{
-                    padding: "6px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer",
-                    border: res === "loss" ? "none" : `1.5px solid ${c.grayLight}`,
-                    backgroundColor: res === "loss" ? c.red : c.white,
-                    color: res === "loss" ? c.white : c.charcoal,
-                  }}>Loss</button>
-                </div>
-                <span style={{ fontSize: "12px", color: c.green, fontWeight: 600, textAlign: "right" }}>
-                  {res ? "✓" : ""}
+                <span style={{ fontWeight: 700, color: a.seed < 100 ? c.green : c.gray }}>
+                  {a.seed < 100 ? a.seed : "—"}
                 </span>
+                <span style={{ fontWeight: 600, color: c.charcoal }}>{a.name}</span>
+
+                {/* Won / Lost toggle */}
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleSelect(a.id!, "win")}
+                    disabled={!!saved && !hasPendingChange}
+                    style={{
+                      padding: "5px 12px", borderRadius: "7px", fontSize: "13px", fontWeight: 600,
+                      cursor: saved && !hasPendingChange ? "default" : "pointer",
+                      border: sel === "win" ? "none" : `1.5px solid ${c.grayLight}`,
+                      backgroundColor: sel === "win" ? c.green : c.white,
+                      color: sel === "win" ? c.white : c.charcoal,
+                      opacity: saved && sel !== "win" ? 0.4 : 1,
+                    }}
+                  >Won</button>
+                  <button
+                    onClick={() => handleSelect(a.id!, "loss")}
+                    disabled={!!saved && !hasPendingChange}
+                    style={{
+                      padding: "5px 12px", borderRadius: "7px", fontSize: "13px", fontWeight: 600,
+                      cursor: saved && !hasPendingChange ? "default" : "pointer",
+                      border: sel === "loss" ? "none" : `1.5px solid ${c.grayLight}`,
+                      backgroundColor: sel === "loss" ? c.red : c.white,
+                      color: sel === "loss" ? c.white : c.charcoal,
+                      opacity: saved && sel !== "loss" ? 0.4 : 1,
+                    }}
+                  >Lost</button>
+                </div>
+
+                {/* Save button — only when a result is selected and not yet saved */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {hasPendingChange && (
+                    <button
+                      onClick={() => handleSave(a.id!)}
+                      disabled={isSaving}
+                      style={{
+                        padding: "5px 14px", borderRadius: "7px", fontSize: "13px", fontWeight: 600,
+                        border: "none", cursor: isSaving ? "not-allowed" : "pointer",
+                        backgroundColor: isSaving ? "#9CA3AF" : c.charcoal,
+                        color: c.white, whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isSaving ? "Saving..." : pending[a.id!] === "loss" ? "Save & Eliminate" : "Save Result"}
+                    </button>
+                  )}
+                  {saved && !hasPendingChange && (
+                    <span style={{ fontSize: "12px", color: c.green, fontWeight: 600 }}>Saved</span>
+                  )}
+                  {saved && !hasPendingChange && activeRoundData?.status !== "completed" && (
+                    <button
+                      onClick={() => setPending((prev) => ({ ...prev, [a.id!]: saved }))}
+                      style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
-
-        <p style={{ fontSize: "13px", color: c.gray, margin: "16px 0 0", lineHeight: 1.5 }}>
-          Results save automatically as you enter them. Finalize when all results are in to trigger eliminations.
-        </p>
       </div>
-
-      {activeRoundData?.status !== "completed" && (
-        <button
-          onClick={handleFinalizeRound}
-          disabled={!allResultsIn || finalizing}
-          style={{
-            width: "100%", padding: "14px", borderRadius: "10px", border: "none",
-            background: allResultsIn && !finalizing ? c.green : c.grayLight,
-            color: allResultsIn && !finalizing ? c.white : c.gray,
-            fontSize: "15px", fontWeight: 600,
-            cursor: allResultsIn && !finalizing ? "pointer" : "default",
-          }}
-        >
-          {finalizing ? "Finalizing..." : `Finalize ${roundLabel(activeRound - 1)} (${enteredCount}/${activeAthletes.length} results entered)`}
-        </button>
-      )}
     </div>
   );
 }
@@ -741,6 +915,8 @@ export default function TournamentSetupClient({
   const handleAthletesDone = (a: Athlete[]) => {
     setAthletes(a);
     setView("manage");
+    // Force server re-fetch so the manage view loads athletes from DB
+    router.refresh();
   };
 
   return (
