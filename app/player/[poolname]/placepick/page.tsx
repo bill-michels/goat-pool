@@ -91,6 +91,24 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       return (a as any)?.name ?? "?";
     });
 
+  const isLocked = activeRound.lock_deadline
+    ? new Date(activeRound.lock_deadline) < new Date()
+    : false;
+
+  if (isLocked) {
+    return (
+      <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", minHeight: "100vh", backgroundColor: c.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ backgroundColor: c.white, borderRadius: "20px", padding: "40px", border: `1px solid ${c.grayLight}`, textAlign: "center", maxWidth: "400px" }}>
+          <h1 style={{ fontSize: "22px", fontWeight: 800, color: c.charcoal, margin: "0 0 8px" }}>Picks Are Locked</h1>
+          <p style={{ fontSize: "15px", color: c.gray, margin: "0 0 20px" }}>The deadline for this round has passed. If you didn&apos;t pick, one has been auto-assigned for you.</p>
+          <a href={`/player/${pool.slug}`} style={{ display: "inline-block", padding: "10px 20px", borderRadius: "10px", background: "#4A7C59", color: c.white, fontSize: "14px", fontWeight: 600, textDecoration: "none" }}>
+            Back to Pool
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <PlacePickClient
       username={userData?.username ?? "?"}

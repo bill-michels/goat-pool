@@ -20,6 +20,16 @@ export async function placePick(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
+  const { data: round } = await db
+    .from("rounds")
+    .select("lock_deadline")
+    .eq("id", roundId)
+    .single();
+
+  if (round?.lock_deadline && new Date(round.lock_deadline) < new Date()) {
+    return { error: "Picks are locked for this round." };
+  }
+
   if (existingPickId) {
     const { error } = await db
       .from("picks")
