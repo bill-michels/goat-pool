@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 import CommissionerNav from "../../CommissionerNav";
+import { sendInvites, resendInvite } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -174,7 +174,6 @@ export default function ManagePoolClient({
   earnings: number;
   payout: { amount: number; status: string } | null;
 }) {
-  const supabase = createClient();
 
   const [activeTab, setActiveTab] = useState("players");
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
@@ -183,6 +182,8 @@ export default function ManagePoolClient({
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resentId, setResentId] = useState<string | null>(null);
 
   const completedAndActiveRounds = rounds.filter(
     (r) => r.status !== "upcoming"
@@ -205,20 +206,17 @@ export default function ManagePoolClient({
       return;
     }
 
-    const newInvites = emails.map((email) => ({
-      pool_id: pool.id,
-      email,
-      invite_token: crypto.randomUUID(),
-      status: "pending",
-    }));
-
-    const { data, error } = await supabase
-      .from("pool_invites")
-      .insert(newInvites)
-      .select("id, email, status, sent_at");
+    const { data, error } = await sendInvites(
+      emails,
+      pool.id,
+      pool.name,
+      pool.tournamentName,
+      username,
+      pool.feePerLife
+    );
 
     if (error) {
-      setInviteError(error.message);
+      setInviteError(error);
       setInviteLoading(false);
       return;
     }
@@ -813,7 +811,7 @@ export default function ManagePoolClient({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "2fr 1fr 1fr",
+                    gridTemplateColumns: "2fr 1fr 1fr 1fr",
                     padding: "12px 20px",
                     backgroundColor: c.grayLighter,
                     fontSize: "12px",
@@ -826,52 +824,79 @@ export default function ManagePoolClient({
                   <span>Email</span>
                   <span>Status</span>
                   <span>Sent</span>
+                  <span></span>
                 </div>
 
-                {invites.map((inv) => (
-                  <div
-                    key={inv.id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "2fr 1fr 1fr",
-                      padding: "14px 20px",
-                      fontSize: "14px",
-                      borderTop: `1px solid ${c.grayLight}`,
-                      alignItems: "center",
-                    }}
-                  >
-                    <span
-                      style={{ color: c.charcoal, fontWeight: 500 }}
-                    >
-                      {inv.email}
-                    </span>
-                    <span
+                {invites.map((inv) => {
+                  const isResending = resendingId === inv.id;
+                  const justResent = resentId === inv.id;
+                  return (
+                    <div
+                      key={inv.id}
                       style={{
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        padding: "3px 8px",
-                        borderRadius: "6px",
-                        backgroundColor:
-                          inv.status === "accepted"
-                            ? c.greenMuted
-                            : c.grayLighter,
-                        color:
-                          inv.status === "accepted" ? c.green : c.gray,
-                        display: "inline-block",
-                        width: "fit-content",
+                        display: "grid",
+                        gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                        padding: "14px 20px",
+                        fontSize: "14px",
+                        borderTop: `1px solid ${c.grayLight}`,
+                        alignItems: "center",
                       }}
                     >
-                      {inv.status === "accepted" ? "Accepted" : "Pending"}
-                    </span>
-                    <span style={{ fontSize: "13px", color: c.gray }}>
-                      {new Date(inv.sent_at).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </span>
-                  </div>
-                ))}
+                      <span style={{ color: c.charcoal, fontWeight: 500 }}>
+                        {inv.email}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          backgroundColor:
+                            inv.status === "accepted" ? c.greenMuted : c.grayLighter,
+                          color: inv.status === "accepted" ? c.green : c.gray,
+                          display: "inline-block",
+                          width: "fit-content",
+                        }}
+                      >
+                        {inv.status === "accepted" ? "Accepted" : "Pending"}
+                      </span>
+                      <span style={{ fontSize: "13px", color: c.gray }}>
+                        {new Date(inv.sent_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </span>
+                      <span>
+                        {inv.status === "pending" && (
+                          <button
+                            type="button"
+                            disabled={isResending}
+                            onClick={async () => {
+                              setResendingId(inv.id);
+                              await resendInvite(inv.id);
+                              setResendingId(null);
+                              setResentId(inv.id);
+                              setTimeout(() => setResentId(null), 2000);
+                            }}
+                            style={{
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              border: `1.5px solid ${c.grayLight}`,
+                              background: c.white,
+                              color: justResent ? c.green : c.charcoal,
+                              cursor: isResending ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {isResending ? "Sending..." : justResent ? "Sent!" : "Resend"}
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
               </>
             )}
           </div>

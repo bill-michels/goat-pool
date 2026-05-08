@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { notifyRoundComplete } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -692,6 +693,7 @@ function ManageTournament({
       } else {
         await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
       }
+      notifyRoundComplete(activeRoundData.id);
       router.refresh();
     }
   };
