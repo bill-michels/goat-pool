@@ -107,6 +107,9 @@ export default async function CommissionerDashboard() {
     .eq("commissioner_id", user.id)
     .order("created_at", { ascending: false });
 
+  const role = userData?.role ?? "player";
+  if (role === "player" && !pools?.length) redirect("/player");
+
   const enrichedPools = (pools ?? []).map((pool: any) => {
     const players = pool.pool_players ?? [];
     const payments = pool.payments ?? [];
