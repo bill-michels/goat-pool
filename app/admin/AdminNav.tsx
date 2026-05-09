@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { usePathname } from "next/navigation";
 
 const c = {
   green: "#4A7C59",
@@ -35,14 +34,6 @@ const NAV_LINKS = [
 
 export default function AdminNav({ username }: { username: string }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const supabase = createClient();
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
-  };
 
   return (
     <nav style={{
@@ -101,26 +92,26 @@ export default function AdminNav({ username }: { username: string }) {
 
         <div style={{ width: "1px", height: "24px", backgroundColor: c.grayLight, margin: "0 8px" }} />
 
-        <button
-          onClick={handleSignOut}
-          title="Sign out"
+        <Link
+          href="/profile"
+          title="Profile"
           style={{
             width: "36px",
             height: "36px",
             borderRadius: "50%",
             backgroundColor: c.amberMuted,
-            border: "none",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontSize: "14px",
             fontWeight: 700,
             color: c.amber,
+            textDecoration: "none",
             cursor: "pointer",
           }}
         >
           {username.charAt(0).toUpperCase()}
-        </button>
+        </Link>
       </div>
     </nav>
   );
