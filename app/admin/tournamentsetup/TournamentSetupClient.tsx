@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete } from "./actions";
+import { notifyRoundComplete, deleteTournament } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -619,6 +619,8 @@ function ManageTournament({
   const supabase = createClient();
   const router = useRouter();
   const totalRounds = rounds.length;
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [activeRound, setActiveRound] = useState(
     rounds.find((r) => r.status === "active")?.round_number ?? rounds[0]?.round_number ?? 1
@@ -722,18 +724,44 @@ function ManageTournament({
             {athletes.length} athletes — {rounds.length} rounds
           </p>
         </div>
-        <button onClick={onEditAthletes} style={{
-          padding: "10px 20px", borderRadius: "10px",
-          border: `1.5px solid ${c.grayLight}`, background: c.white,
-          color: c.charcoal, fontSize: "14px", fontWeight: 600, cursor: "pointer",
-        }}>
-          Edit Athletes
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={onEditAthletes} style={{
+            padding: "10px 20px", borderRadius: "10px",
+            border: `1.5px solid ${c.grayLight}`, background: c.white,
+            color: c.charcoal, fontSize: "14px", fontWeight: 600, cursor: "pointer",
+          }}>
+            Edit Athletes
+          </button>
+          <button
+            onClick={async () => {
+              if (!confirm(`Delete "${tournament.name}"? This cannot be undone.`)) return;
+              setDeleting(true);
+              setDeleteError(null);
+              const result = await deleteTournament(tournament.id);
+              if (result.error) {
+                setDeleteError(result.error);
+                setDeleting(false);
+              } else {
+                router.push("/admin/tournamentsetup");
+                router.refresh();
+              }
+            }}
+            disabled={deleting}
+            style={{
+              padding: "10px 20px", borderRadius: "10px",
+              border: `1.5px solid #FECACA`, background: "#FEF2F2",
+              color: c.red, fontSize: "14px", fontWeight: 600,
+              cursor: deleting ? "not-allowed" : "pointer",
+            }}
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
       </div>
 
-      {error && (
+      {(error || deleteError) && (
         <div style={{ padding: "12px 14px", borderRadius: "10px", backgroundColor: c.redMuted, border: `1px solid #FECACA`, color: c.red, fontSize: "14px", marginBottom: "20px" }}>
-          {error}
+          {error || deleteError}
         </div>
       )}
 

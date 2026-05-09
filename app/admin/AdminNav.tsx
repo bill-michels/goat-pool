@@ -70,7 +70,7 @@ export default function AdminNav({ username }: { username: string }) {
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
         {NAV_LINKS.map(({ label, href }) => {
           const isActive = href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
-          const isDisabled = href === "/admin/metrics";
+          const isDisabled = false;
           return isDisabled ? (
             <span key={label} style={{
               padding: "8px 16px", borderRadius: "8px",

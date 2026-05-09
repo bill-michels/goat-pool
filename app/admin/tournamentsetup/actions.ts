@@ -18,6 +18,29 @@ function roundLabel(roundNumber: number, totalRounds: number): string {
   return `Round ${roundNumber}`;
 }
 
+export async function deleteTournament(
+  tournamentId: string
+): Promise<{ error?: string }> {
+  const admin = db();
+
+  const { count } = await admin
+    .from("pools")
+    .select("*", { count: "exact", head: true })
+    .eq("tournament_id", tournamentId);
+
+  if (count && count > 0) {
+    return { error: "Cannot delete a tournament that has pools. Delete the pools first." };
+  }
+
+  const { error } = await admin
+    .from("tournaments")
+    .delete()
+    .eq("id", tournamentId);
+
+  if (error) return { error: error.message };
+  return {};
+}
+
 export async function notifyRoundComplete(roundId: string) {
   const admin = db();
   const base = appUrl();
