@@ -391,7 +391,9 @@ function AddAthletes({
   onBack: () => void;
 }) {
   const supabase = createClient();
-  const [athletes, setAthletes] = useState<Athlete[]>(initialAthletes);
+  const [athletes, setAthletes] = useState<Athlete[]>(
+    initialAthletes.map((a) => ({ ...a, _key: a._key ?? a.id ?? crypto.randomUUID() }))
+  );
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
