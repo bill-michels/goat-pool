@@ -455,6 +455,15 @@ function AddAthletes({
     const existing = athletes.filter((a) => a.id);
     const newAthletes = athletes.filter((a) => !a.id);
 
+    // Delete athletes that were in the initial list but removed by the user
+    const removedIds = initialAthletes
+      .filter((a) => a.id && !athletes.some((curr) => curr.id === a.id))
+      .map((a) => a.id);
+    if (removedIds.length > 0) {
+      const { error: err } = await supabase.from("athletes").delete().in("id", removedIds);
+      if (err) { setError(err.message); setSaving(false); return; }
+    }
+
     const results: Athlete[] = [];
 
     if (existing.length > 0) {
