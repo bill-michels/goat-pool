@@ -471,14 +471,15 @@ function AddAthletes({
     if (newAthletes.length > 0) {
       const { data, error: err } = await supabase
         .from("athletes")
-        .insert(
+        .upsert(
           newAthletes.map((a) => ({
             tournament_id: tournament.id,
             name: a.name,
             seed: a.seed,
             has_bye: a.has_bye,
             status: a.status,
-          }))
+          })),
+          { onConflict: "tournament_id,name" }
         )
         .select();
       if (err) { setError(err.message); setSaving(false); return; }
