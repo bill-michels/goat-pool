@@ -447,6 +447,8 @@ function AddAthletes({
 
   const handleSave = async () => {
     if (athletes.length === 0) { setError("Add at least one athlete."); return; }
+    const seeds = athletes.map((a) => a.seed).filter((s) => s !== null);
+    if (new Set(seeds).size !== seeds.length) { setError("Duplicate seed numbers detected. Each seed must be unique."); return; }
     setSaving(true);
     setError(null);
 
@@ -565,9 +567,29 @@ function AddAthletes({
                 padding: "14px 20px", fontSize: "14px",
                 borderTop: `1px solid ${c.grayLight}`, alignItems: "center",
               }}>
-                <span style={{ fontWeight: 700, color: a.seed !== null ? c.green : c.gray }}>
-                  {a.seed !== null ? a.seed : "—"}
-                </span>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="—"
+                  value={a.seed ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAthletes((prev) =>
+                      prev.map((x) =>
+                        x._key === a._key
+                          ? { ...x, seed: val === "" ? null : parseInt(val) }
+                          : x
+                      )
+                    );
+                  }}
+                  style={{
+                    width: "56px", padding: "4px 8px",
+                    border: `1.5px solid ${c.grayLight}`, borderRadius: "6px",
+                    fontSize: "14px", fontWeight: 700,
+                    color: a.seed !== null ? c.green : c.gray,
+                    textAlign: "center", boxSizing: "border-box" as const,
+                  }}
+                />
                 <span style={{ fontWeight: 600, color: c.charcoal }}>{a.name}</span>
                 <span>
                   <button
