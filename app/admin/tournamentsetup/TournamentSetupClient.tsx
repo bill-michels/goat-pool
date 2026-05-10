@@ -406,7 +406,13 @@ function AddAthletes({
     setError(null);
     const entries = bulkText.split(",").map((s) => s.trim()).filter(Boolean);
     const parsed: Athlete[] = [];
-    let autoSeed = nextAutoSeed();
+    const takenSeeds = new Set(athletes.map((a) => a.seed));
+    let nextSeed = 100;
+
+    const getNextAutoSeed = () => {
+      while (takenSeeds.has(nextSeed)) nextSeed++;
+      return nextSeed++;
+    };
 
     for (const entry of entries) {
       const withSeed = entry.match(/^(.+?)\s*\((\d+)\)$/);
@@ -416,15 +422,14 @@ function AddAthletes({
       if (withSeed) {
         name = withSeed[1].trim();
         seed = parseInt(withSeed[2]);
+        if (takenSeeds.has(seed)) { setError(`Duplicate seed ${seed}.`); return; }
       } else {
         name = entry.trim();
-        seed = autoSeed++;
+        seed = getNextAutoSeed();
       }
 
       if (!name) continue;
-      if (athletes.some((a) => a.seed === seed) || parsed.some((a) => a.seed === seed)) {
-        setError(`Duplicate seed ${seed}.`); return;
-      }
+      takenSeeds.add(seed);
       parsed.push({ name, seed, has_bye: false, status: "active" });
     }
 
