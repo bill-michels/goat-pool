@@ -67,7 +67,8 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       .select("id, name, seed, has_bye")
       .eq("tournament_id", tournamentId)
       .eq("status", "active")
-      .order("seed"),
+      .order("seed", { nullsFirst: false })
+      .order("name"),
   ]);
 
   const previousPickAthleteIds = new Set(

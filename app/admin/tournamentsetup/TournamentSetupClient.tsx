@@ -372,8 +372,9 @@ function CreateTournament({
 
 interface Athlete {
   id?: string;
+  _key: string;
   name: string;
-  seed: number;
+  seed: number | null;
   has_bye: boolean;
   status: string;
 }
@@ -395,58 +396,51 @@ function AddAthletes({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const nextAutoSeed = () => {
-    const existing = athletes.map((a) => a.seed);
-    let s = 100;
-    while (existing.includes(s)) s++;
-    return s;
-  };
-
   const parseBulk = () => {
     setError(null);
     const entries = bulkText.split(",").map((s) => s.trim()).filter(Boolean);
     const parsed: Athlete[] = [];
-    const takenSeeds = new Set(athletes.map((a) => a.seed));
-    let nextSeed = 100;
-
-    const getNextAutoSeed = () => {
-      while (takenSeeds.has(nextSeed)) nextSeed++;
-      return nextSeed++;
-    };
+    const takenSeeds = new Set(athletes.map((a) => a.seed).filter((s) => s !== null));
 
     for (const entry of entries) {
       const withSeed = entry.match(/^(.+?)\s*\((\d+)\)$/);
       let name: string;
-      let seed: number;
+      let seed: number | null;
 
       if (withSeed) {
         name = withSeed[1].trim();
         seed = parseInt(withSeed[2]);
         if (takenSeeds.has(seed)) { setError(`Duplicate seed ${seed}.`); return; }
+        takenSeeds.add(seed);
       } else {
         name = entry.trim();
-        seed = getNextAutoSeed();
+        seed = null;
       }
 
       if (!name) continue;
-      takenSeeds.add(seed);
-      parsed.push({ name, seed, has_bye: false, status: "active" });
+      parsed.push({ _key: crypto.randomUUID(), name, seed, has_bye: false, status: "active" });
     }
 
-    setAthletes((prev) =>
-      [...prev, ...parsed].sort((a, b) => a.seed - b.seed)
-    );
+    setAthletes((prev) => {
+      const combined = [...prev, ...parsed];
+      return combined.sort((a, b) => {
+        if (a.seed !== null && b.seed !== null) return a.seed - b.seed;
+        if (a.seed !== null) return -1;
+        if (b.seed !== null) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    });
     setBulkText("");
   };
 
-  const toggleBye = (seed: number) => {
+  const toggleBye = (key: string) => {
     setAthletes((prev) =>
-      prev.map((a) => (a.seed === seed ? { ...a, has_bye: !a.has_bye } : a))
+      prev.map((a) => (a._key === key ? { ...a, has_bye: !a.has_bye } : a))
     );
   };
 
-  const removeAthlete = (seed: number) => {
-    setAthletes((prev) => prev.filter((a) => a.seed !== seed));
+  const removeAthlete = (key: string) => {
+    setAthletes((prev) => prev.filter((a) => a._key !== key));
   };
 
   const handleSave = async () => {
@@ -454,27 +448,44 @@ function AddAthletes({
     setSaving(true);
     setError(null);
 
-    const payload = athletes.map((a) => ({
-      ...(a.id ? { id: a.id } : {}),
-      tournament_id: tournament.id,
-      name: a.name,
-      seed: a.seed,
-      has_bye: a.has_bye,
-      status: a.status,
-    }));
+    const existing = athletes.filter((a) => a.id);
+    const newAthletes = athletes.filter((a) => !a.id);
 
-    const { data, error: err } = await supabase
-      .from("athletes")
-      .upsert(payload, { onConflict: "tournament_id,seed" })
-      .select();
+    const results: Athlete[] = [];
 
-    if (err) { setError(err.message); setSaving(false); return; }
-    onDone(data ?? athletes);
+    if (existing.length > 0) {
+      for (const a of existing) {
+        const { error: err } = await supabase
+          .from("athletes")
+          .update({ name: a.name, seed: a.seed, has_bye: a.has_bye, status: a.status })
+          .eq("id", a.id!);
+        if (err) { setError(err.message); setSaving(false); return; }
+      }
+      results.push(...existing);
+    }
+
+    if (newAthletes.length > 0) {
+      const { data, error: err } = await supabase
+        .from("athletes")
+        .insert(
+          newAthletes.map((a) => ({
+            tournament_id: tournament.id,
+            name: a.name,
+            seed: a.seed,
+            has_bye: a.has_bye,
+            status: a.status,
+          }))
+        )
+        .select();
+      if (err) { setError(err.message); setSaving(false); return; }
+      results.push(...(data ?? []).map((d: any) => ({ ...d, _key: d.id })));
+    }
+
+    onDone(results);
     setSaving(false);
   };
 
-  const seededAthletes = athletes.filter((a) => a.seed < 100);
-  const unseededAthletes = athletes.filter((a) => a.seed >= 100);
+  const seededCount = athletes.filter((a) => a.seed !== null).length;
 
   return (
     <div style={{ maxWidth: "740px", margin: "0 auto", padding: "40px" }}>
@@ -501,11 +512,11 @@ function AddAthletes({
       {/* Bulk Add */}
       <div style={{ backgroundColor: c.white, borderRadius: "16px", padding: "24px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
         <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 10px" }}>
-          Comma-separated list. Include a seed in parentheses to help track, but it&apos;s optional.{" "}
-          <em>e.g. Jannik Sinner (1), Carlos Alcaraz (2)</em>
+          Comma-separated list. Include a seed in parentheses if known — unseeded athletes are fine too.{" "}
+          <em>e.g. Sinner (1), Alcaraz (2), Musetti</em>
         </p>
         <textarea
-          placeholder="Sinner (1), Alcaraz (2), Djokovic (3), Medvedev (4), ..."
+          placeholder="Sinner (1), Alcaraz (2), Musetti, Zverev (3), ..."
           rows={3}
           value={bulkText}
           onChange={(e) => setBulkText(e.target.value)}
@@ -534,52 +545,52 @@ function AddAthletes({
       {athletes.length > 0 && (
         <>
           <p style={{ fontSize: "15px", fontWeight: 700, color: c.charcoal, margin: "0 0 12px" }}>
-            Total Added: {athletes.length}, Total Seeded: {seededAthletes.length}
+            Total: {athletes.length} — Seeded: {seededCount} — Unseeded: {athletes.length - seededCount}
           </p>
-        <div style={{ backgroundColor: c.white, borderRadius: "14px", overflow: "hidden", border: `1px solid ${c.grayLight}`, marginBottom: "16px" }}>
-          <div style={{
-            display: "grid", gridTemplateColumns: "0.5fr 2fr 1fr 0.5fr",
-            padding: "12px 20px", backgroundColor: c.grayLighter,
-            fontSize: "12px", fontWeight: 600, color: c.gray,
-            textTransform: "uppercase", letterSpacing: "0.5px",
-          }}>
-            <span>Seed</span><span>Athlete</span><span>Bye in R1</span><span></span>
-          </div>
-
-          {athletes.map((a) => (
-            <div key={a.seed} style={{
+          <div style={{ backgroundColor: c.white, borderRadius: "14px", overflow: "hidden", border: `1px solid ${c.grayLight}`, marginBottom: "16px" }}>
+            <div style={{
               display: "grid", gridTemplateColumns: "0.5fr 2fr 1fr 0.5fr",
-              padding: "14px 20px", fontSize: "14px",
-              borderTop: `1px solid ${c.grayLight}`, alignItems: "center",
+              padding: "12px 20px", backgroundColor: c.grayLighter,
+              fontSize: "12px", fontWeight: 600, color: c.gray,
+              textTransform: "uppercase", letterSpacing: "0.5px",
             }}>
-              <span style={{ fontWeight: 700, color: a.seed < 100 ? c.green : c.gray }}>
-                {a.seed < 100 ? a.seed : "—"}
-              </span>
-              <span style={{ fontWeight: 600, color: c.charcoal }}>{a.name}</span>
-              <span>
-                <button
-                  onClick={() => toggleBye(a.seed)}
-                  style={{
-                    fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px",
-                    border: "none", cursor: "pointer",
-                    backgroundColor: a.has_bye ? c.amberMuted : c.grayLighter,
-                    color: a.has_bye ? c.amber : c.gray,
-                  }}
-                >
-                  {a.has_bye ? "Bye" : "No bye"}
-                </button>
-              </span>
-              <span style={{ textAlign: "right" }}>
-                <button
-                  onClick={() => removeAthlete(a.seed)}
-                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: "16px", color: c.gray }}
-                >
-                  ×
-                </button>
-              </span>
+              <span>Seed</span><span>Athlete</span><span>Bye in R1</span><span></span>
             </div>
-          ))}
-        </div>
+
+            {athletes.map((a) => (
+              <div key={a._key} style={{
+                display: "grid", gridTemplateColumns: "0.5fr 2fr 1fr 0.5fr",
+                padding: "14px 20px", fontSize: "14px",
+                borderTop: `1px solid ${c.grayLight}`, alignItems: "center",
+              }}>
+                <span style={{ fontWeight: 700, color: a.seed !== null ? c.green : c.gray }}>
+                  {a.seed !== null ? a.seed : "—"}
+                </span>
+                <span style={{ fontWeight: 600, color: c.charcoal }}>{a.name}</span>
+                <span>
+                  <button
+                    onClick={() => toggleBye(a._key)}
+                    style={{
+                      fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px",
+                      border: "none", cursor: "pointer",
+                      backgroundColor: a.has_bye ? c.amberMuted : c.grayLighter,
+                      color: a.has_bye ? c.amber : c.gray,
+                    }}
+                  >
+                    {a.has_bye ? "Bye" : "No bye"}
+                  </button>
+                </span>
+                <span style={{ textAlign: "right" }}>
+                  <button
+                    onClick={() => removeAthlete(a._key)}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: "16px", color: c.gray }}
+                  >
+                    ×
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
         </>
       )}
 
@@ -844,8 +855,8 @@ function ManageTournament({
                 backgroundColor: saved === "win" ? "#F0FAF3" : saved === "loss" ? "#FEF8F8" : c.white,
                 borderTop: `1px solid ${c.grayLight}`, alignItems: "center",
               }}>
-                <span style={{ fontWeight: 700, color: a.seed < 100 ? c.green : c.gray }}>
-                  {a.seed < 100 ? a.seed : "—"}
+                <span style={{ fontWeight: 700, color: a.seed !== null ? c.green : c.gray }}>
+                  {a.seed !== null ? a.seed : "—"}
                 </span>
                 <span style={{ fontWeight: 600, color: c.charcoal }}>{a.name}</span>
 

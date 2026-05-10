@@ -31,10 +31,11 @@ async function autoAssignMissedPicks(roundId: string) {
 
   const { data: allAthletes } = await admin
     .from("athletes")
-    .select("id, seed, has_bye")
+    .select("id, name, seed, has_bye")
     .eq("tournament_id", round.tournament_id)
     .eq("status", "active")
-    .order("seed");
+    .order("seed", { nullsFirst: false })
+    .order("name");
 
   if (!allAthletes?.length) return;
 
