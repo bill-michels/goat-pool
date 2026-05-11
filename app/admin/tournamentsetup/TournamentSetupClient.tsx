@@ -672,7 +672,6 @@ function ManageTournament({
   const totalRounds = rounds.length;
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [settingActive, setSettingActive] = useState(false);
 
   const [activeRound, setActiveRound] = useState(
     rounds.find((r) => r.status === "active")?.round_number ?? rounds[0]?.round_number ?? 1
@@ -795,20 +794,6 @@ function ManageTournament({
   };
 
   const savedCount = activeAthletes.filter((a) => savedResults[a.id!] !== undefined).length;
-
-  const handleSetActiveRound = async (roundNumber: number) => {
-    setSettingActive(true);
-    setError(null);
-    for (const r of rounds) {
-      const newStatus = r.round_number < roundNumber ? "completed"
-        : r.round_number === roundNumber ? "active"
-        : "upcoming";
-      await supabase.from("rounds").update({ status: newStatus }).eq("id", r.id);
-    }
-    await supabase.from("tournaments").update({ status: "active" }).eq("id", tournament.id);
-    setSettingActive(false);
-    router.refresh();
-  };
 
   return (
     <div style={{ maxWidth: "860px", margin: "0 auto", padding: "40px" }}>
@@ -987,28 +972,13 @@ function ManageTournament({
               {byeCount > 0 ? ` — ${byeCount} with a bye not included` : ""}
             </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {activeRoundData?.status !== "active" && (
-              <button
-                onClick={() => handleSetActiveRound(activeRound)}
-                disabled={settingActive}
-                style={{
-                  padding: "5px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
-                  border: `1.5px solid ${c.grayLight}`, background: c.white,
-                  color: c.charcoal, cursor: settingActive ? "not-allowed" : "pointer",
-                }}
-              >
-                {settingActive ? "Updating..." : "Set as Active Round"}
-              </button>
-            )}
-            <span style={{
-              padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
-              backgroundColor: activeRoundData?.status === "completed" ? c.greenMuted : activeRoundData?.status === "active" ? c.amberMuted : c.grayLighter,
-              color: activeRoundData?.status === "completed" ? c.green : activeRoundData?.status === "active" ? c.amber : c.gray,
-            }}>
-              {activeRoundData?.status === "completed" ? "Completed" : activeRoundData?.status === "active" ? "In Progress" : "Upcoming"}
-            </span>
-          </div>
+          <span style={{
+            padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
+            backgroundColor: activeRoundData?.status === "completed" ? c.greenMuted : activeRoundData?.status === "active" ? c.amberMuted : c.grayLighter,
+            color: activeRoundData?.status === "completed" ? c.green : activeRoundData?.status === "active" ? c.amber : c.gray,
+          }}>
+            {activeRoundData?.status === "completed" ? "Completed" : activeRoundData?.status === "active" ? "In Progress" : "Upcoming"}
+          </span>
         </div>
 
         <div style={{ borderRadius: "10px", overflow: "hidden", border: `1px solid ${c.grayLight}` }}>
