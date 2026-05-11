@@ -683,6 +683,9 @@ function ManageTournament({
   // Which athlete ID is currently mid-save
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
+  const [savingDeadline, setSavingDeadline] = useState(false);
 
   const activeRoundData = rounds.find((r) => r.round_number === activeRound);
   const activeAthletes = athletes.filter((a) => {
@@ -835,7 +838,7 @@ function ManageTournament({
         {rounds.map((r) => (
           <button
             key={r.round_number}
-            onClick={() => setActiveRound(r.round_number)}
+            onClick={() => { setActiveRound(r.round_number); setEditingDeadline(false); }}
             style={{
               flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
               textAlign: "center", fontSize: "12px", fontWeight: 700,
@@ -851,6 +854,70 @@ function ManageTournament({
             {roundLabel(r.round_number, totalRounds)}
           </button>
         ))}
+      </div>
+
+      {/* Lock Deadline */}
+      <div style={{ backgroundColor: c.white, borderRadius: "12px", padding: "16px 20px", border: `1px solid ${c.grayLight}`, marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" as const }}>
+        <span style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal, minWidth: "100px" }}>Lock Deadline</span>
+        {editingDeadline ? (
+          <>
+            <input
+              type="date"
+              value={deadlineInput.date}
+              onChange={(e) => setDeadlineInput((p) => ({ ...p, date: e.target.value }))}
+              style={{ padding: "7px 10px", border: `1.5px solid ${c.grayLight}`, borderRadius: "8px", fontSize: "14px", color: c.charcoal }}
+            />
+            <input
+              type="time"
+              value={deadlineInput.time}
+              onChange={(e) => setDeadlineInput((p) => ({ ...p, time: e.target.value }))}
+              style={{ padding: "7px 10px", border: `1.5px solid ${c.grayLight}`, borderRadius: "8px", fontSize: "14px", color: c.charcoal, width: "130px" }}
+            />
+            <button
+              disabled={!deadlineInput.date || savingDeadline}
+              onClick={async () => {
+                if (!activeRoundData) return;
+                setSavingDeadline(true);
+                const iso = new Date(`${deadlineInput.date}T${deadlineInput.time || "00:00"}`).toISOString();
+                await supabase.from("rounds").update({ lock_deadline: iso }).eq("id", activeRoundData.id);
+                setSavingDeadline(false);
+                setEditingDeadline(false);
+                router.refresh();
+              }}
+              style={{ padding: "7px 14px", borderRadius: "8px", border: "none", background: deadlineInput.date ? c.green : "#9CA3AF", color: c.white, fontSize: "13px", fontWeight: 600, cursor: deadlineInput.date ? "pointer" : "not-allowed" }}
+            >
+              {savingDeadline ? "Saving..." : "Save"}
+            </button>
+            <button
+              onClick={() => setEditingDeadline(false)}
+              style={{ fontSize: "13px", color: c.gray, background: "none", border: "none", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: "14px", color: activeRoundData?.lock_deadline ? c.charcoal : c.gray, flex: 1 }}>
+              {activeRoundData?.lock_deadline
+                ? new Date(activeRoundData.lock_deadline).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
+                : "No deadline set"}
+            </span>
+            <button
+              onClick={() => {
+                if (activeRoundData?.lock_deadline) {
+                  const d = new Date(activeRoundData.lock_deadline);
+                  setDeadlineInput({ date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 5) });
+                } else {
+                  setDeadlineInput({ date: "", time: "" });
+                }
+                setEditingDeadline(true);
+              }}
+              style={{ fontSize: "13px", color: c.gray, background: "none", border: `1px solid ${c.grayLight}`, borderRadius: "6px", cursor: "pointer", padding: "5px 12px" }}
+            >
+              {activeRoundData?.lock_deadline ? "Edit" : "Set"}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Results Entry */}
