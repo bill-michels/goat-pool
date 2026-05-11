@@ -686,8 +686,14 @@ function ManageTournament({
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
   const [savingDeadline, setSavingDeadline] = useState(false);
+  // Local copy of deadlines so saves reflect immediately without a full refresh
+  const [deadlineOverrides, setDeadlineOverrides] = useState<Record<string, string | null>>({});
 
-  const activeRoundData = rounds.find((r) => r.round_number === activeRound);
+  const activeRoundData = (() => {
+    const r = rounds.find((r) => r.round_number === activeRound);
+    if (!r) return r;
+    return r.id in deadlineOverrides ? { ...r, lock_deadline: deadlineOverrides[r.id] } : r;
+  })();
   const activeAthletes = athletes.filter((a) => {
     if (activeRound === 1) return !a.has_bye;
     return a.status === "active";
@@ -873,16 +879,24 @@ function ManageTournament({
               onChange={(e) => setDeadlineInput((p) => ({ ...p, time: e.target.value }))}
               style={{ padding: "7px 10px", border: `1.5px solid ${c.grayLight}`, borderRadius: "8px", fontSize: "14px", color: c.charcoal, width: "130px" }}
             />
+            <span style={{ fontSize: "13px", color: c.gray }}>PT</span>
             <button
               disabled={!deadlineInput.date || savingDeadline}
               onClick={async () => {
                 if (!activeRoundData) return;
                 setSavingDeadline(true);
-                const iso = new Date(`${deadlineInput.date}T${deadlineInput.time || "00:00"}`).toISOString();
-                await supabase.from("rounds").update({ lock_deadline: iso }).eq("id", activeRoundData.id);
+                // Convert PT input to UTC by formatting a reference date in LA and computing the offset
+                const naive = new Date(`${deadlineInput.date}T${deadlineInput.time || "00:00"}:00`);
+                const utcMs = naive.getTime();
+                const laStr = naive.toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                const laMs = new Date(laStr.replace(/(\d+)\/(\d+)\/(\d+),/, "$3-$1-$2")).getTime();
+                const offsetMs = utcMs - laMs;
+                const iso = new Date(naive.getTime() + offsetMs).toISOString();
+                const { error: err } = await supabase.from("rounds").update({ lock_deadline: iso }).eq("id", activeRoundData.id);
+                if (err) { setError(err.message); setSavingDeadline(false); return; }
+                setDeadlineOverrides((prev) => ({ ...prev, [activeRoundData.id]: iso }));
                 setSavingDeadline(false);
                 setEditingDeadline(false);
-                router.refresh();
               }}
               style={{ padding: "7px 14px", borderRadius: "8px", border: "none", background: deadlineInput.date ? c.green : "#9CA3AF", color: c.white, fontSize: "13px", fontWeight: 600, cursor: deadlineInput.date ? "pointer" : "not-allowed" }}
             >
@@ -899,14 +913,17 @@ function ManageTournament({
           <>
             <span style={{ fontSize: "14px", color: activeRoundData?.lock_deadline ? c.charcoal : c.gray, flex: 1 }}>
               {activeRoundData?.lock_deadline
-                ? new Date(activeRoundData.lock_deadline).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
+                ? new Date(activeRoundData.lock_deadline).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
                 : "No deadline set"}
             </span>
             <button
               onClick={() => {
                 if (activeRoundData?.lock_deadline) {
                   const d = new Date(activeRoundData.lock_deadline);
-                  setDeadlineInput({ date: d.toISOString().slice(0, 10), time: d.toTimeString().slice(0, 5) });
+                  const ptStr = d.toLocaleString("en-US", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+                  const [datePart, timePart] = ptStr.split(", ");
+                  const [mm, dd, yyyy] = datePart.split("/");
+                  setDeadlineInput({ date: `${yyyy}-${mm}-${dd}`, time: timePart === "24:00" ? "00:00" : timePart });
                 } else {
                   setDeadlineInput({ date: "", time: "" });
                 }
