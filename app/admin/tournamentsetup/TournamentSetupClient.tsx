@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -377,6 +377,7 @@ interface Athlete {
   seed: number | null;
   has_bye: boolean;
   status: string;
+  eliminated_in_round?: number | null;
 }
 
 function AddAthletes({
@@ -689,11 +690,13 @@ function ManageTournament({
   // Local copy of deadlines so saves reflect immediately without a full refresh
   const [deadlineOverrides, setDeadlineOverrides] = useState<Record<string, string | null>>({});
 
-  // Track eliminated athletes across the session (DB status + any losses saved this session)
-  const [eliminatedIds, setEliminatedIds] = useState<Set<string>>(() => {
-    const s = new Set<string>();
-    athletes.filter((a) => a.status === "eliminated").forEach((a) => s.add(a.id!));
-    return s;
+  // Map of athleteId → round they were eliminated in (from DB + current session)
+  const [eliminatedInRound, setEliminatedInRound] = useState<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    athletes.forEach((a) => {
+      if (a.status === "eliminated" && a.eliminated_in_round) m.set(a.id!, a.eliminated_in_round);
+    });
+    return m;
   });
 
   const currentActiveRoundNumber = rounds.find((r) => r.status === "active")?.round_number ?? 1;
@@ -703,11 +706,32 @@ function ManageTournament({
     if (!r) return r;
     return r.id in deadlineOverrides ? { ...r, lock_deadline: deadlineOverrides[r.id] } : r;
   })();
+
+  // Athletes who were eligible to play in the viewed round
   const activeAthletes = athletes.filter((a) => {
+    if (!a.id) return false;
     if (activeRound === 1) return !a.has_bye;
-    return !eliminatedIds.has(a.id!);
+    const elimRound = eliminatedInRound.get(a.id) ?? a.eliminated_in_round ?? null;
+    return elimRound === null || elimRound >= activeRound;
   });
   const byeCount = activeRound === 1 ? athletes.filter((a) => a.has_bye).length : 0;
+
+  // Load saved results from DB whenever the viewed round changes
+  useEffect(() => {
+    const roundData = rounds.find((r) => r.round_number === activeRound);
+    if (!roundData?.id) return;
+    setSavedResults({});
+    setPending({});
+    supabase
+      .from("athlete_results")
+      .select("athlete_id, result")
+      .eq("round_id", roundData.id)
+      .then(({ data }) => {
+        const map: Record<string, "win" | "loss"> = {};
+        (data ?? []).forEach((r: any) => { map[r.athlete_id] = r.result; });
+        setSavedResults(map);
+      });
+  }, [activeRound]);
 
   const handleSelect = (athleteId: string, result: "win" | "loss") => {
     // If already saved as this result, do nothing
@@ -746,7 +770,7 @@ function ManageTournament({
       await supabase.from("athletes")
         .update({ status: "eliminated", eliminated_in_round: activeRound })
         .eq("id", athleteId);
-      setEliminatedIds((prev) => { const next = new Set(prev); next.add(athleteId); return next; });
+      setEliminatedInRound((prev) => { const m = new Map(prev); m.set(athleteId, activeRound); return m; });
     }
 
     // Commit locally
@@ -1068,7 +1092,7 @@ function ManageTournament({
                   {saved && !hasPendingChange && (
                     <span style={{ fontSize: "12px", color: c.green, fontWeight: 600 }}>Saved</span>
                   )}
-                  {saved && !hasPendingChange && activeRoundData?.status !== "completed" && (
+                  {saved && !hasPendingChange && (
                     <button
                       onClick={() => setPending((prev) => ({ ...prev, [a.id!]: saved }))}
                       style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}
