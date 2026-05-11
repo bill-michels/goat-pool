@@ -690,9 +690,11 @@ function ManageTournament({
   const [deadlineOverrides, setDeadlineOverrides] = useState<Record<string, string | null>>({});
 
   // Track eliminated athletes across the session (DB status + any losses saved this session)
-  const [eliminatedIds, setEliminatedIds] = useState<Set<string>>(
-    new Set(athletes.filter((a) => a.status === "eliminated").map((a) => a.id!))
-  );
+  const [eliminatedIds, setEliminatedIds] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    athletes.filter((a) => a.status === "eliminated").forEach((a) => s.add(a.id!));
+    return s;
+  });
 
   const currentActiveRoundNumber = rounds.find((r) => r.status === "active")?.round_number ?? 1;
 
@@ -744,7 +746,7 @@ function ManageTournament({
       await supabase.from("athletes")
         .update({ status: "eliminated", eliminated_in_round: activeRound })
         .eq("id", athleteId);
-      setEliminatedIds((prev) => new Set([...prev, athleteId]));
+      setEliminatedIds((prev) => { const next = new Set(prev); next.add(athleteId); return next; });
     }
 
     // Commit locally
