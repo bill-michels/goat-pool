@@ -689,6 +689,13 @@ function ManageTournament({
   // Local copy of deadlines so saves reflect immediately without a full refresh
   const [deadlineOverrides, setDeadlineOverrides] = useState<Record<string, string | null>>({});
 
+  // Track eliminated athletes across the session (DB status + any losses saved this session)
+  const [eliminatedIds, setEliminatedIds] = useState<Set<string>>(
+    new Set(athletes.filter((a) => a.status === "eliminated").map((a) => a.id!))
+  );
+
+  const currentActiveRoundNumber = rounds.find((r) => r.status === "active")?.round_number ?? 1;
+
   const activeRoundData = (() => {
     const r = rounds.find((r) => r.round_number === activeRound);
     if (!r) return r;
@@ -696,7 +703,7 @@ function ManageTournament({
   })();
   const activeAthletes = athletes.filter((a) => {
     if (activeRound === 1) return !a.has_bye;
-    return a.status === "active";
+    return !eliminatedIds.has(a.id!);
   });
   const byeCount = activeRound === 1 ? athletes.filter((a) => a.has_bye).length : 0;
 
@@ -737,6 +744,7 @@ function ManageTournament({
       await supabase.from("athletes")
         .update({ status: "eliminated", eliminated_in_round: activeRound })
         .eq("id", athleteId);
+      setEliminatedIds((prev) => new Set([...prev, athleteId]));
     }
 
     // Commit locally
@@ -841,25 +849,29 @@ function ManageTournament({
 
       {/* Round Tabs */}
       <div style={{ display: "flex", gap: "6px", marginBottom: "28px" }}>
-        {rounds.map((r) => (
-          <button
-            key={r.round_number}
-            onClick={() => { setActiveRound(r.round_number); setEditingDeadline(false); }}
-            style={{
-              flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
-              textAlign: "center", fontSize: "12px", fontWeight: 700,
-              cursor: "pointer",
-              backgroundColor:
-                activeRound === r.round_number ? c.green :
-                r.status === "completed" ? c.greenMuted : c.grayLighter,
-              color:
-                activeRound === r.round_number ? c.white :
-                r.status === "completed" ? c.green : c.gray,
-            }}
-          >
-            {roundLabel(r.round_number, totalRounds)}
-          </button>
-        ))}
+        {rounds.map((r) => {
+          const clickable = r.status === "completed" || r.status === "active" || r.round_number === currentActiveRoundNumber + 1;
+          return (
+            <button
+              key={r.round_number}
+              onClick={() => { if (clickable) { setActiveRound(r.round_number); setEditingDeadline(false); } }}
+              style={{
+                flex: 1, padding: "10px 4px", borderRadius: "8px", border: "none",
+                textAlign: "center", fontSize: "12px", fontWeight: 700,
+                cursor: clickable ? "pointer" : "default",
+                backgroundColor:
+                  activeRound === r.round_number ? c.green :
+                  r.status === "completed" ? c.greenMuted : c.grayLighter,
+                color:
+                  activeRound === r.round_number ? c.white :
+                  r.status === "completed" ? c.green : c.gray,
+                opacity: clickable ? 1 : 0.4,
+              }}
+            >
+              {roundLabel(r.round_number, totalRounds)}
+            </button>
+          );
+        })}
       </div>
 
       {/* Lock Deadline */}
