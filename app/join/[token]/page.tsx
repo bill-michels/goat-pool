@@ -54,7 +54,7 @@ export default async function JoinPoolPage({ params }: { params: { token: string
 
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect(`/login`);
+  if (!user) redirect(`/login?token=${token}`);
 
   const { data: existing } = await adminClient
     .from("pool_players")

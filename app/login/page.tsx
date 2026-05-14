@@ -47,8 +47,11 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const supabase = createClient();
 
+  const inviteToken = searchParams.get("token");
+  const postAuthPath = inviteToken ? `/join/${inviteToken}` : "/auth/redirect";
+
   const [mode, setMode] = useState<Mode>(
-    searchParams.get("mode") === "signup" ? "signup" : "login"
+    inviteToken ? "signup" : searchParams.get("mode") === "signup" ? "signup" : "login"
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -75,7 +78,7 @@ function LoginForm() {
       if (error) {
         setError(error.message);
       } else {
-        router.push("/auth/redirect");
+        router.push(postAuthPath);
         router.refresh();
       }
     } else if (mode === "signup") {
@@ -84,12 +87,13 @@ function LoginForm() {
         setLoading(false);
         return;
       }
+      const next = inviteToken ? `/join/${inviteToken}` : "/auth/redirect";
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { username },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${next}`,
         },
       });
       if (error) {
@@ -113,9 +117,10 @@ function LoginForm() {
   };
 
   const handleGoogle = async () => {
+    const next = inviteToken ? `/join/${inviteToken}` : "/auth/redirect";
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=${next}` },
     });
   };
 
@@ -152,6 +157,11 @@ function LoginForm() {
         padding: "36px",
         border: `1px solid ${c.grayLight}`,
       }}>
+        {inviteToken && (
+          <div style={{ padding: "10px 14px", borderRadius: "10px", backgroundColor: c.greenMuted, border: `1px solid ${c.green}`, color: c.green, fontSize: "13px", fontWeight: 600, textAlign: "center", marginBottom: "20px" }}>
+            You&apos;ve been invited to a Goat Pool — {mode === "signup" ? "create an account" : "sign in"} to join.
+          </div>
+        )}
         <h1 style={{ fontSize: "24px", fontWeight: 800, color: c.charcoal, margin: "0 0 6px", letterSpacing: "-0.5px", textAlign: "center" }}>
           {mode === "login" ? "Welcome back" : mode === "signup" ? "Create your account" : "Reset password"}
         </h1>
