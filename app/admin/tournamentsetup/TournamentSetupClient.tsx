@@ -680,6 +680,7 @@ function ManageTournament({
   const [savedResults, setSavedResults] = useState<Record<string, "win" | "loss">>({});
   // Pending selection the user has clicked but not yet saved
   const [pending, setPending] = useState<Record<string, "win" | "loss">>({});
+  const [editingResultIds, setEditingResultIds] = useState<Set<string>>(() => new Set());
   // Which athlete ID is currently mid-save
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -721,6 +722,7 @@ function ManageTournament({
     if (!roundData?.id) return;
     setSavedResults({});
     setPending({});
+    setEditingResultIds(new Set());
     supabase
       .from("athlete_results")
       .select("athlete_id, result")
@@ -776,6 +778,7 @@ function ManageTournament({
     const newSaved = { ...savedResults, [athleteId]: result };
     setSavedResults(newSaved);
     setPending((prev) => { const n = { ...prev }; delete n[athleteId]; return n; });
+    setEditingResultIds((prev) => { const s = new Set(prev); s.delete(athleteId); return s; });
     setSavingId(null);
 
     // Auto-complete the round when every match has a saved result
@@ -999,9 +1002,19 @@ function ManageTournament({
 
           {activeAthletes.map((a) => {
             const saved = savedResults[a.id!];
+            const isEditing = editingResultIds.has(a.id!);
             const sel = pending[a.id!] ?? saved;
-            const hasPendingChange = pending[a.id!] !== undefined && pending[a.id!] !== saved;
+            const hasChange = pending[a.id!] !== undefined && pending[a.id!] !== saved;
             const isSaving = savingId === a.id;
+            const locked = !!saved && !isEditing;
+
+            const enterEdit = () => {
+              setEditingResultIds((prev) => { const s = new Set(prev); s.add(a.id!); return s; });
+            };
+            const cancelEdit = () => {
+              setEditingResultIds((prev) => { const s = new Set(prev); s.delete(a.id!); return s; });
+              setPending((prev) => { const n = { ...prev }; delete n[a.id!]; return n; });
+            };
 
             return (
               <div key={a.id} style={{
@@ -1018,34 +1031,31 @@ function ManageTournament({
                 {/* Won / Lost toggle */}
                 <div style={{ display: "flex", gap: "6px" }}>
                   <button
-                    onClick={() => handleSelect(a.id!, "win")}
-                    disabled={!!saved && !hasPendingChange}
+                    onClick={() => !locked && handleSelect(a.id!, "win")}
                     style={{
                       padding: "5px 12px", borderRadius: "7px", fontSize: "13px", fontWeight: 600,
-                      cursor: saved && !hasPendingChange ? "default" : "pointer",
+                      cursor: locked ? "default" : "pointer",
                       border: sel === "win" ? "none" : `1.5px solid ${c.grayLight}`,
                       backgroundColor: sel === "win" ? c.green : c.white,
                       color: sel === "win" ? c.white : c.charcoal,
-                      opacity: saved && sel !== "win" ? 0.4 : 1,
+                      opacity: locked && sel !== "win" ? 0.4 : 1,
                     }}
                   >Won</button>
                   <button
-                    onClick={() => handleSelect(a.id!, "loss")}
-                    disabled={!!saved && !hasPendingChange}
+                    onClick={() => !locked && handleSelect(a.id!, "loss")}
                     style={{
                       padding: "5px 12px", borderRadius: "7px", fontSize: "13px", fontWeight: 600,
-                      cursor: saved && !hasPendingChange ? "default" : "pointer",
+                      cursor: locked ? "default" : "pointer",
                       border: sel === "loss" ? "none" : `1.5px solid ${c.grayLight}`,
                       backgroundColor: sel === "loss" ? c.red : c.white,
                       color: sel === "loss" ? c.white : c.charcoal,
-                      opacity: saved && sel !== "loss" ? 0.4 : 1,
+                      opacity: locked && sel !== "loss" ? 0.4 : 1,
                     }}
                   >Lost</button>
                 </div>
 
-                {/* Save button — only when a result is selected and not yet saved */}
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  {hasPendingChange && (
+                  {hasChange && (
                     <button
                       onClick={() => handleSave(a.id!)}
                       disabled={isSaving}
@@ -1059,14 +1069,16 @@ function ManageTournament({
                       {isSaving ? "Saving..." : pending[a.id!] === "loss" ? "Save & Eliminate" : "Save Result"}
                     </button>
                   )}
-                  {saved && !hasPendingChange && (
+                  {isEditing && !hasChange && (
+                    <button onClick={cancelEdit} style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                      Cancel
+                    </button>
+                  )}
+                  {saved && !isEditing && (
                     <span style={{ fontSize: "12px", color: c.green, fontWeight: 600 }}>Saved</span>
                   )}
-                  {saved && !hasPendingChange && (
-                    <button
-                      onClick={() => setPending((prev) => ({ ...prev, [a.id!]: saved }))}
-                      style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}
-                    >
+                  {saved && !isEditing && (
+                    <button onClick={enterEdit} style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                       Edit
                     </button>
                   )}
