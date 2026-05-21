@@ -21,6 +21,7 @@ function LogoIcon() {
 export default function PlayerNav({ username, isCommissioner }: { username: string; isCommissioner: boolean }) {
   const pathname = usePathname();
   const onMyPools = pathname === "/player" || pathname.startsWith("/player/");
+  const onPools = pathname === "/pools";
   const initials = username.slice(0, 2).toUpperCase();
 
   return (
@@ -41,6 +42,13 @@ export default function PlayerNav({ username, isCommissioner }: { username: stri
           color: onMyPools ? c.green : c.gray,
           fontSize: "15px", fontWeight: 500,
         }}>My Pools</Link>
+
+        <Link href="/pools" style={{
+          padding: "8px 16px", borderRadius: "8px", textDecoration: "none",
+          background: onPools ? c.greenMuted : "transparent",
+          color: onPools ? c.green : c.gray,
+          fontSize: "15px", fontWeight: 500,
+        }}>Find a Pool</Link>
 
         {isCommissioner && (
           <Link href="/commissioner" style={{

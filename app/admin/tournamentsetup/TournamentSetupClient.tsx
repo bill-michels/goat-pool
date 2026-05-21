@@ -179,6 +179,13 @@ function CreateTournament({
         setLoading(false); return;
       }
       tournament = data;
+    } else {
+      const { error: uErr } = await supabase
+        .from("tournaments")
+        .update({ name: name.trim(), num_rounds: roundCount })
+        .eq("id", tournament.id);
+      if (uErr) { setError(uErr.message); setLoading(false); return; }
+      tournament = { ...tournament, name: name.trim(), num_rounds: roundCount };
     }
 
     const roundsPayload = Array.from({ length: roundCount }, (_, i) => ({
@@ -661,11 +668,13 @@ function ManageTournament({
   rounds,
   athletes,
   onEditAthletes,
+  onEditDetails,
 }: {
   tournament: any;
   rounds: any[];
   athletes: Athlete[];
   onEditAthletes: () => void;
+  onEditDetails: () => void;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -821,6 +830,13 @@ function ManageTournament({
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px" }}>
+          <button onClick={onEditDetails} style={{
+            padding: "10px 20px", borderRadius: "10px",
+            border: `1.5px solid ${c.grayLight}`, background: c.white,
+            color: c.charcoal, fontSize: "14px", fontWeight: 600, cursor: "pointer",
+          }}>
+            Edit Details
+          </button>
           <button onClick={onEditAthletes} style={{
             padding: "10px 20px", borderRadius: "10px",
             border: `1.5px solid ${c.grayLight}`, background: c.white,
@@ -1157,6 +1173,7 @@ export default function TournamentSetupClient({
           rounds={rounds}
           athletes={athletes}
           onEditAthletes={() => setView("athletes")}
+          onEditDetails={() => setView("create")}
         />
       )}
     </div>

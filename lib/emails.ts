@@ -79,6 +79,21 @@ export function pickReminderEmail({
   `);
 }
 
+export function joinRequestEmail({
+  requesterUsername, poolName, manageUrl,
+}: {
+  requesterUsername: string;
+  poolName: string;
+  manageUrl: string;
+}) {
+  return base(`
+    <h1 style="font-size:22px;font-weight:800;color:${charcoal};margin:0 0 6px;letter-spacing:-0.5px;">New join request</h1>
+    <p style="font-size:15px;color:${gray};margin:0 0 24px;"><strong style="color:${charcoal};">${requesterUsername}</strong> has requested to join <strong style="color:${charcoal};">${poolName}</strong>.</p>
+    <p style="font-size:14px;color:${gray};margin:0 0 28px;">Review their request and approve or decline from your pool dashboard.</p>
+    <div style="text-align:center;margin-bottom:24px;">${btn(manageUrl, "Review Request")}</div>
+  `);
+}
+
 export function roundResultEmail({
   username, poolName, roundLabel, pickAthleteName, result, livesRemaining, livesPurchased, isEliminated, poolUrl,
 }: {

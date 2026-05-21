@@ -22,7 +22,7 @@ export default async function ManagePoolPage({
   const { data: pool } = await adminClient
     .from("pools")
     .select(
-      "id, name, slug, status, fee_per_life, missed_pick_rule, take_rate, tournament_id, tournaments(id, name)"
+      "id, name, slug, status, fee_per_life, missed_pick_rule, take_rate, allow_join_requests, tournament_id, tournaments(id, name)"
     )
     .eq("slug", params.poolname)
     .eq("commissioner_id", user.id)
@@ -40,6 +40,7 @@ export default async function ManagePoolPage({
     { data: payments },
     { data: payout },
     { data: userData },
+    { data: joinRequests },
   ] = await Promise.all([
     adminClient
       .from("rounds")
@@ -72,6 +73,11 @@ export default async function ManagePoolPage({
       .eq("pool_id", pool.id)
       .maybeSingle(),
     adminClient.from("users").select("username, role").eq("id", user.id).single(),
+    adminClient
+      .from("join_requests")
+      .select("id, status, created_at, users(username, email)")
+      .eq("pool_id", pool.id)
+      .order("created_at", { ascending: false }),
   ]);
 
   const totalFees = (payments ?? []).reduce(
@@ -103,11 +109,19 @@ export default async function ManagePoolPage({
         feePerLife: pool.fee_per_life,
         missedPickRule: pool.missed_pick_rule,
         takeRate: pool.take_rate,
+        allowJoinRequests: pool.allow_join_requests ?? false,
         tournamentName: (pool.tournaments as any)?.name ?? "—",
       }}
       rounds={rounds ?? []}
       players={playersWithPicks}
       invites={invites ?? []}
+      joinRequests={(joinRequests ?? []).map((r: any) => ({
+        id: r.id,
+        status: r.status,
+        createdAt: r.created_at,
+        username: r.users?.username ?? "—",
+        email: r.users?.email ?? "—",
+      }))}
       totalFees={totalFees}
       earnings={earnings}
       payout={payout ?? null}

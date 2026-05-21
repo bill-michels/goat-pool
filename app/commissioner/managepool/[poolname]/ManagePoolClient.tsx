@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import CommissionerNav from "../../CommissionerNav";
-import { sendInvites, resendInvite } from "./actions";
+import { sendInvites, resendInvite, approveJoinRequest, declineJoinRequest, updateAllowJoinRequests } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -62,7 +62,16 @@ type Pool = {
   feePerLife: number;
   missedPickRule: string;
   takeRate: number;
+  allowJoinRequests: boolean;
   tournamentName: string;
+};
+
+type JoinRequest = {
+  id: string;
+  status: string;
+  createdAt: string;
+  username: string;
+  email: string;
 };
 
 function StatCard({
@@ -159,6 +168,7 @@ export default function ManagePoolClient({
   rounds,
   players,
   invites: initialInvites,
+  joinRequests: initialJoinRequests,
   totalFees,
   earnings,
   payout,
@@ -170,6 +180,7 @@ export default function ManagePoolClient({
   rounds: Round[];
   players: Player[];
   invites: Invite[];
+  joinRequests: JoinRequest[];
   totalFees: number;
   earnings: number;
   payout: { amount: number; status: string } | null;
@@ -177,6 +188,11 @@ export default function ManagePoolClient({
 
   const [activeTab, setActiveTab] = useState("players");
   const [invites, setInvites] = useState<Invite[]>(initialInvites);
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>(initialJoinRequests);
+  const [allowJoinRequests, setAllowJoinRequests] = useState(pool.allowJoinRequests);
+  const [togglingJoinRequests, setTogglingJoinRequests] = useState(false);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [inviteEmails, setInviteEmails] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -233,6 +249,40 @@ export default function ManagePoolClient({
 
   const missedPickLabel =
     pool.missedPickRule === "top_seed" ? "Top Seed Remaining" : "Random Athlete";
+
+  const pendingRequestCount = joinRequests.filter(r => r.status === "pending").length;
+
+  const handleApprove = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    setRequestError(null);
+    const { error } = await approveJoinRequest(requestId, pool.slug);
+    if (error) {
+      setRequestError(error);
+    } else {
+      setJoinRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: "approved" } : r));
+    }
+    setProcessingRequestId(null);
+  };
+
+  const handleDecline = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    setRequestError(null);
+    const { error } = await declineJoinRequest(requestId, pool.slug);
+    if (error) {
+      setRequestError(error);
+    } else {
+      setJoinRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: "declined" } : r));
+    }
+    setProcessingRequestId(null);
+  };
+
+  const handleToggleJoinRequests = async () => {
+    setTogglingJoinRequests(true);
+    const newVal = !allowJoinRequests;
+    const { error } = await updateAllowJoinRequests(pool.id, newVal, pool.slug);
+    if (!error) setAllowJoinRequests(newVal);
+    setTogglingJoinRequests(false);
+  };
 
   return (
     <div
@@ -502,6 +552,39 @@ export default function ManagePoolClient({
             <strong style={{ color: c.charcoal }}>Missed Pick:</strong>{" "}
             {missedPickLabel}
           </span>
+          <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" }}>
+            <strong style={{ color: c.charcoal }}>Join Requests:</strong>
+            <button
+              type="button"
+              onClick={handleToggleJoinRequests}
+              disabled={togglingJoinRequests}
+              style={{
+                position: "relative",
+                width: "36px",
+                height: "20px",
+                borderRadius: "10px",
+                border: "none",
+                background: allowJoinRequests ? c.green : c.grayLight,
+                cursor: togglingJoinRequests ? "not-allowed" : "pointer",
+                transition: "background 0.2s",
+                flexShrink: 0,
+              }}
+            >
+              <span style={{
+                position: "absolute",
+                top: "2px",
+                left: allowJoinRequests ? "18px" : "2px",
+                width: "16px",
+                height: "16px",
+                borderRadius: "50%",
+                background: c.white,
+                transition: "left 0.2s",
+              }} />
+            </button>
+            <span style={{ color: allowJoinRequests ? c.green : c.gray, fontWeight: 600 }}>
+              {allowJoinRequests ? "Open" : "Closed"}
+            </span>
+          </span>
         </div>
 
         {/* Round Lock Dates */}
@@ -559,6 +642,7 @@ export default function ManagePoolClient({
           {[
             { key: "players", label: `Players (${players.length})` },
             { key: "invites", label: `Invites (${invites.length})` },
+            { key: "requests", label: `Requests${pendingRequestCount > 0 ? ` (${pendingRequestCount})` : ""}` },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -894,6 +978,76 @@ export default function ManagePoolClient({
                           </button>
                         )}
                       </span>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Requests Tab */}
+        {activeTab === "requests" && (
+          <div style={{ backgroundColor: c.white, borderRadius: "14px", overflow: "hidden", border: `1px solid ${c.grayLight}` }}>
+            {requestError && (
+              <div style={{ padding: "12px 20px", backgroundColor: c.redMuted, borderBottom: `1px solid #FECACA`, color: c.red, fontSize: "14px" }}>
+                {requestError}
+              </div>
+            )}
+            {joinRequests.length === 0 ? (
+              <div style={{ padding: "40px", textAlign: "center", color: c.gray, fontSize: "15px" }}>
+                No join requests yet.{" "}
+                {!allowJoinRequests && "Enable join requests in settings to let players find and request to join this pool."}
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "12px 20px", backgroundColor: c.grayLighter, fontSize: "12px", fontWeight: 600, color: c.gray, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  <span>Player</span>
+                  <span>Requested</span>
+                  <span>Status</span>
+                  <span></span>
+                </div>
+                {joinRequests.map((req) => {
+                  const isPending = req.status === "pending";
+                  const isProcessing = processingRequestId === req.id;
+                  return (
+                    <div key={req.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 20px", fontSize: "14px", borderTop: `1px solid ${c.grayLight}`, alignItems: "center" }}>
+                      <div>
+                        <span style={{ fontWeight: 600, color: c.charcoal }}>{req.username}</span>
+                        <br />
+                        <span style={{ fontSize: "12px", color: c.gray }}>{req.email}</span>
+                      </div>
+                      <span style={{ fontSize: "13px", color: c.gray }}>
+                        {new Date(req.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      <span style={{ fontSize: "12px", fontWeight: 600, padding: "3px 8px", borderRadius: "6px", display: "inline-block", width: "fit-content",
+                        backgroundColor: req.status === "approved" ? c.greenMuted : req.status === "declined" ? c.redMuted : c.amberMuted,
+                        color: req.status === "approved" ? c.green : req.status === "declined" ? c.red : c.amber,
+                      }}>
+                        {req.status === "approved" ? "Approved" : req.status === "declined" ? "Declined" : "Pending"}
+                      </span>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        {isPending && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() => handleApprove(req.id)}
+                              style={{ fontSize: "12px", fontWeight: 600, padding: "5px 12px", borderRadius: "6px", border: "none", background: isProcessing ? "#9CA3AF" : c.green, color: c.white, cursor: isProcessing ? "not-allowed" : "pointer" }}
+                            >
+                              {isProcessing ? "..." : "Approve"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() => handleDecline(req.id)}
+                              style={{ fontSize: "12px", fontWeight: 600, padding: "5px 12px", borderRadius: "6px", border: `1.5px solid ${c.grayLight}`, background: c.white, color: c.charcoal, cursor: isProcessing ? "not-allowed" : "pointer" }}
+                            >
+                              Decline
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

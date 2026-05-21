@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 
 const c = {
   green: "#4A7C59",
@@ -32,15 +30,6 @@ export default function CommissionerNav({
   username: string;
   isAdmin?: boolean;
 }) {
-  const router = useRouter();
-  const supabase = createClient();
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
-  };
-
   const initials = username.slice(0, 2).toUpperCase();
 
   return (
@@ -86,18 +75,18 @@ export default function CommissionerNav({
 
         <div style={{ width: "1px", height: "24px", backgroundColor: c.grayLight, margin: "0 8px" }} />
 
-        <button
-          onClick={handleSignOut}
-          title="Sign out"
+        <Link
+          href="/profile"
+          title="Profile"
           style={{
             width: "36px", height: "36px", borderRadius: "50%",
-            backgroundColor: c.greenMuted, border: "none",
+            backgroundColor: c.greenMuted, textDecoration: "none",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: "13px", fontWeight: 700, color: c.green, cursor: "pointer",
           }}
         >
           {initials}
-        </button>
+        </Link>
       </div>
     </nav>
   );

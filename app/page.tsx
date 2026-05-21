@@ -94,6 +94,18 @@ function Nav() {
           </button>
         ))}
 
+        <Link href="/pools" style={{
+          padding: "8px 16px",
+          borderRadius: "8px",
+          background: "transparent",
+          color: c.gray,
+          fontSize: "15px",
+          fontWeight: 500,
+          textDecoration: "none",
+        }}>
+          Find a Pool
+        </Link>
+
         <div style={{ width: "1px", height: "24px", backgroundColor: c.grayLight, margin: "0 8px" }} />
 
         <Link href="/login" style={{
