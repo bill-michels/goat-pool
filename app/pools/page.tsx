@@ -19,8 +19,8 @@ export default async function PoolsPage() {
     .order("name");
 
   // If user is logged in, fetch their existing requests and memberships
-  let myRequestPoolIds = new Set<string>();
-  let myMemberPoolIds = new Set<string>();
+  const myRequestPoolIds = new Set<string>();
+  const myMemberPoolIds = new Set<string>();
 
   if (user) {
     const [{ data: requests }, { data: memberships }] = await Promise.all([
