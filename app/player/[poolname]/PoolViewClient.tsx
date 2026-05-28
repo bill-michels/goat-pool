@@ -118,56 +118,59 @@ export default function PoolViewClient({
 
         {/* Your Status */}
         {membership && (
-          <div style={{
-            padding: "20px 24px", borderRadius: "14px", backgroundColor: c.white,
-            border: `1px solid ${c.grayLight}`, marginBottom: "20px",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-          }}>
-            <div style={{ display: "flex", gap: "32px", alignItems: "center" }}>
-              <div>
-                <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Your Status</p>
+          <>
+            <div style={{
+              padding: "20px 24px", borderRadius: "14px", backgroundColor: c.white,
+              border: `1px solid ${c.grayLight}`, marginBottom: usedPicks.length > 0 ? "8px" : "20px",
+              display: "flex", gap: "32px", alignItems: "center", flexWrap: "nowrap", overflowX: "auto",
+            }}>
+              <div style={{ flexShrink: 0 }}>
+                <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Your Status</p>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: isAlive ? c.green : c.red }} />
-                  <span style={{ fontSize: "16px", fontWeight: 700, color: isAlive ? c.green : c.red }}>
+                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: isAlive ? c.green : c.red, flexShrink: 0 }} />
+                  <span style={{ fontSize: "16px", fontWeight: 700, color: isAlive ? c.green : c.red, whiteSpace: "nowrap" }}>
                     {membership.status === "winner" ? "Winner!" : isAlive ? "Alive" : "Eliminated"}
                   </span>
                 </div>
               </div>
-              <div>
-                <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Lives</p>
-                <p style={{ fontSize: "16px", fontWeight: 700, color: membership.livesRemaining === 1 ? c.amber : c.green, margin: 0 }}>
+              <div style={{ flexShrink: 0 }}>
+                <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Lives</p>
+                <p style={{ fontSize: "14px", fontWeight: 700, color: membership.livesRemaining === 1 ? c.amber : c.green, margin: 0, whiteSpace: "nowrap" }}>
                   {membership.livesRemaining} of {membership.livesPurchased}
                 </p>
               </div>
               {activeRound && (
-                <div>
-                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Current Round</p>
-                  <p style={{ fontSize: "16px", fontWeight: 700, color: c.charcoal, margin: 0 }}>
+                <div style={{ flexShrink: 0 }}>
+                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Current Round</p>
+                  <p style={{ fontSize: "16px", fontWeight: 700, color: c.charcoal, margin: 0, whiteSpace: "nowrap" }}>
                     {roundLabel(activeRound.roundNumber, pool.totalRounds)}
                   </p>
                 </div>
               )}
               {activeRound?.hasPick && activeRound.pickAthleteName && (
-                <div>
-                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Current Round Pick</p>
-                  <p style={{ fontSize: "16px", fontWeight: 700, color: c.charcoal, margin: 0 }}>{activeRound.pickAthleteName}</p>
+                <div style={{ flexShrink: 0 }}>
+                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Current Round Pick</p>
+                  <p style={{ fontSize: "16px", fontWeight: 700, color: c.charcoal, margin: 0, whiteSpace: "nowrap" }}>{activeRound.pickAthleteName}</p>
                 </div>
               )}
-              {usedPicks.length > 0 && (
-                <div>
-                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Used Picks</p>
-                  <p style={{ fontSize: "14px", fontWeight: 500, color: c.gray, margin: 0 }}>{usedPicks.join(", ")}</p>
+              {activeRound?.lockDeadline && (
+                <div style={{ flexShrink: 0, marginLeft: "auto" }}>
+                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Next Lock Date</p>
+                  <p style={{ fontSize: "14px", fontWeight: 700, color: c.charcoal, margin: 0, whiteSpace: "nowrap" }}>{formatDeadline(activeRound.lockDeadline)}</p>
                 </div>
               )}
             </div>
-            {activeRound?.lockDeadline && (
-              <div style={{ padding: "10px 16px", borderRadius: "10px", backgroundColor: c.amberMuted }}>
-                <p style={{ fontSize: "13px", fontWeight: 600, color: c.amber, margin: 0 }}>
-                  {activeRound.hasPick ? "Locks: " : "Pick due: "}{formatDeadline(activeRound.lockDeadline)}
-                </p>
+
+            {usedPicks.length > 0 && (
+              <div style={{
+                padding: "16px 24px", borderRadius: "14px", backgroundColor: c.white,
+                border: `1px solid ${c.grayLight}`, marginBottom: "20px",
+              }}>
+                <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Used Picks</p>
+                <p style={{ fontSize: "14px", fontWeight: 500, color: c.charcoal, margin: 0 }}>{usedPicks.join(", ")}</p>
               </div>
             )}
-          </div>
+          </>
         )}
 
         {/* Stats */}
