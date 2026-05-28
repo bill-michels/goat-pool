@@ -18,6 +18,93 @@ function roundLabel(roundNumber: number, totalRounds: number): string {
   return `Round ${roundNumber}`;
 }
 
+export async function processAthleteResult(
+  athleteId: string,
+  roundId: string,
+  result: "win" | "loss",
+  activeRoundNumber: number
+): Promise<{ error?: string }> {
+  const admin = db();
+
+  // 1. Save athlete_result
+  const { error: resErr } = await admin.from("athlete_results").upsert(
+    { round_id: roundId, athlete_id: athleteId, result },
+    { onConflict: "round_id,athlete_id" }
+  );
+  if (resErr) return { error: resErr.message };
+
+  // 2. Mark athlete eliminated if loss
+  if (result === "loss") {
+    await admin.from("athletes")
+      .update({ status: "eliminated", eliminated_in_round: activeRoundNumber })
+      .eq("id", athleteId);
+  } else {
+    // Undo elimination if result was corrected back to win
+    await admin.from("athletes")
+      .update({ status: "active", eliminated_in_round: null })
+      .eq("id", athleteId);
+  }
+
+  // 3. Find all picks for this athlete/round across all pools
+  const { data: affectedPicks } = await admin
+    .from("picks")
+    .select("id, pool_id, user_id, result")
+    .eq("athlete_id", athleteId)
+    .eq("round_id", roundId);
+
+  if (!affectedPicks?.length) return {};
+
+  // 4. Update pick results
+  await admin.from("picks")
+    .update({ result })
+    .eq("athlete_id", athleteId)
+    .eq("round_id", roundId);
+
+  if (result === "loss") {
+    // 5. For each affected pick, decrement lives and possibly eliminate the pool player
+    for (const pick of affectedPicks) {
+      const { data: pp } = await admin
+        .from("pool_players")
+        .select("id, lives_remaining, status")
+        .eq("pool_id", pick.pool_id)
+        .eq("user_id", pick.user_id)
+        .single();
+
+      if (!pp || pp.status === "eliminated" || pp.status === "winner") continue;
+
+      const newLives = Math.max(0, (pp.lives_remaining ?? 1) - 1);
+      const newStatus = newLives === 0 ? "eliminated" : pp.status;
+
+      await admin.from("pool_players")
+        .update({ lives_remaining: newLives, status: newStatus })
+        .eq("id", pp.id);
+    }
+  } else {
+    // Result corrected to win — restore life if it was previously a loss
+    for (const pick of affectedPicks) {
+      if (pick.result !== "loss") continue; // wasn't previously a loss, skip
+
+      const { data: pp } = await admin
+        .from("pool_players")
+        .select("id, lives_remaining, lives_purchased, status")
+        .eq("pool_id", pick.pool_id)
+        .eq("user_id", pick.user_id)
+        .single();
+
+      if (!pp) continue;
+
+      const newLives = Math.min(pp.lives_purchased, (pp.lives_remaining ?? 0) + 1);
+      const newStatus = pp.status === "eliminated" && newLives > 0 ? "alive" : pp.status;
+
+      await admin.from("pool_players")
+        .update({ lives_remaining: newLives, status: newStatus })
+        .eq("id", pp.id);
+    }
+  }
+
+  return {};
+}
+
 export async function deleteTournament(
   tournamentId: string
 ): Promise<{ error?: string }> {

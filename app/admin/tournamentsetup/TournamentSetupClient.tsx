@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -762,25 +762,19 @@ function ManageTournament({
     setSavingId(athleteId);
     setError(null);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSavingId(null); return; }
-
-    // Save result to DB
-    const { error: resErr } = await supabase.from("athlete_results").upsert({
-      round_id: activeRoundData.id,
-      athlete_id: athleteId,
+    const { error: resErr } = await processAthleteResult(
+      athleteId,
+      activeRoundData.id,
       result,
-      recorded_by: user.id,
-    }, { onConflict: "round_id,athlete_id" });
+      activeRound
+    );
 
-    if (resErr) { setError(resErr.message); setSavingId(null); return; }
+    if (resErr) { setError(resErr); setSavingId(null); return; }
 
-    // Trigger elimination if loss
     if (result === "loss") {
-      await supabase.from("athletes")
-        .update({ status: "eliminated", eliminated_in_round: activeRound })
-        .eq("id", athleteId);
       setEliminatedInRound((prev) => { const m = new Map(prev); m.set(athleteId, activeRound); return m; });
+    } else {
+      setEliminatedInRound((prev) => { const m = new Map(prev); m.delete(athleteId); return m; });
     }
 
     // Commit locally
