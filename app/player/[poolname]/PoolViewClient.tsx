@@ -56,6 +56,9 @@ export default function PoolViewClient({
 }: Props) {
   const [selectedRound, setSelectedRound] = useState<string | null>(null);
 
+  const myPlayer = players.find(p => p.isYou);
+  const usedPicks = myPlayer?.completedPicks ?? [];
+
   const isAlive = membership?.status === "alive";
   const canPickRound = activeRound && isAlive;
   const pickButtonLabel = canPickRound
@@ -146,8 +149,14 @@ export default function PoolViewClient({
               )}
               {activeRound?.hasPick && activeRound.pickAthleteName && (
                 <div>
-                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Your Pick</p>
+                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Current Round Pick</p>
                   <p style={{ fontSize: "16px", fontWeight: 700, color: c.charcoal, margin: 0 }}>{activeRound.pickAthleteName}</p>
+                </div>
+              )}
+              {usedPicks.length > 0 && (
+                <div>
+                  <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Used Picks</p>
+                  <p style={{ fontSize: "14px", fontWeight: 500, color: c.gray, margin: 0 }}>{usedPicks.join(", ")}</p>
                 </div>
               )}
             </div>
