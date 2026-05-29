@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 import { resend, FROM, appUrl } from "@/lib/resend";
 import { roundResultEmail, pickReminderEmail } from "@/lib/emails";
 
@@ -9,6 +10,12 @@ const db = () =>
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+
+async function getAdminUserId(): Promise<string | null> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
 
 function roundLabel(roundNumber: number, totalRounds: number): string {
   const fromEnd = totalRounds - roundNumber;
@@ -26,9 +33,12 @@ export async function processAthleteResult(
 ): Promise<{ error?: string }> {
   const admin = db();
 
+  const recordedBy = await getAdminUserId();
+  if (!recordedBy) return { error: "Not authenticated." };
+
   // 1. Save athlete_result
   const { error: resErr } = await admin.from("athlete_results").upsert(
-    { round_id: roundId, athlete_id: athleteId, result },
+    { round_id: roundId, athlete_id: athleteId, result, recorded_by: recordedBy },
     { onConflict: "round_id,athlete_id" }
   );
   if (resErr) return { error: resErr.message };
