@@ -180,9 +180,9 @@ export default function PoolViewClient({
             { label: "Alive", value: String(aliveCount), color: c.green },
             { label: "Eliminated", value: String(eliminatedCount), color: c.red },
           ].map(({ label, value, color }) => (
-            <div key={label} style={{ flex: 1, backgroundColor: c.white, borderRadius: "14px", padding: "20px", border: `1px solid ${c.grayLight}`, textAlign: "center" }}>
-              <p style={{ fontSize: "12px", fontWeight: 600, color: c.gray, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</p>
-              <p style={{ fontSize: "28px", fontWeight: 800, color, margin: 0, letterSpacing: "-1px" }}>{value}</p>
+            <div key={label} style={{ flex: 1, backgroundColor: c.white, borderRadius: "14px", padding: "12px 20px", border: `1px solid ${c.grayLight}`, display: "flex", alignItems: "center", gap: "10px" }}>
+              <p style={{ fontSize: "12px", fontWeight: 600, color: c.gray, margin: 0, textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>{label}</p>
+              <p style={{ fontSize: "18px", fontWeight: 800, color, margin: 0 }}>{value}</p>
             </div>
           ))}
         </div>
