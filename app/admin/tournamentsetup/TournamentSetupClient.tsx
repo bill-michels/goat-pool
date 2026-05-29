@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -692,6 +692,7 @@ function ManageTournament({
   const [editingResultIds, setEditingResultIds] = useState<Set<string>>(() => new Set());
   // Which athlete ID is currently mid-save
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [undoingId, setUndoingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
@@ -1016,14 +1017,25 @@ function ManageTournament({
             const sel = pending[a.id!] ?? saved;
             const hasChange = pending[a.id!] !== undefined && pending[a.id!] !== saved;
             const isSaving = savingId === a.id;
+            const isUndoing = undoingId === a.id;
             const locked = !!saved && !isEditing;
 
-            const enterEdit = () => {
-              setEditingResultIds((prev) => { const s = new Set(prev); s.add(a.id!); return s; });
-            };
             const cancelEdit = () => {
               setEditingResultIds((prev) => { const s = new Set(prev); s.delete(a.id!); return s; });
               setPending((prev) => { const n = { ...prev }; delete n[a.id!]; return n; });
+            };
+
+            const handleUndo = async () => {
+              if (!activeRoundData) return;
+              setUndoingId(a.id!);
+              setError(null);
+              const { error: undoErr } = await undoAthleteResult(a.id!, activeRoundData.id);
+              if (undoErr) { setError(undoErr); setUndoingId(null); return; }
+              setSavedResults((prev) => { const n = { ...prev }; delete n[a.id!]; return n; });
+              setPending((prev) => { const n = { ...prev }; delete n[a.id!]; return n; });
+              setEditingResultIds((prev) => { const s = new Set(prev); s.delete(a.id!); return s; });
+              setEliminatedInRound((prev) => { const m = new Map(prev); m.delete(a.id!); return m; });
+              setUndoingId(null);
             };
 
             return (
@@ -1088,8 +1100,12 @@ function ManageTournament({
                     <span style={{ fontSize: "12px", color: c.green, fontWeight: 600 }}>Saved</span>
                   )}
                   {saved && !isEditing && (
-                    <button onClick={enterEdit} style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                      Edit
+                    <button
+                      onClick={handleUndo}
+                      disabled={isUndoing}
+                      style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: isUndoing ? "not-allowed" : "pointer", padding: 0 }}
+                    >
+                      {isUndoing ? "Undoing..." : "Undo"}
                     </button>
                   )}
                 </div>

@@ -105,6 +105,61 @@ export async function processAthleteResult(
   return {};
 }
 
+export async function undoAthleteResult(
+  athleteId: string,
+  roundId: string
+): Promise<{ error?: string }> {
+  const admin = db();
+
+  // Find picks for this athlete/round and check if any were losses
+  const { data: affectedPicks } = await admin
+    .from("picks")
+    .select("id, pool_id, user_id, result")
+    .eq("athlete_id", athleteId)
+    .eq("round_id", roundId);
+
+  // Restore lives for players whose pick was a loss
+  for (const pick of (affectedPicks ?? [])) {
+    if (pick.result !== "loss") continue;
+
+    const { data: pp } = await admin
+      .from("pool_players")
+      .select("id, lives_remaining, lives_purchased, status")
+      .eq("pool_id", pick.pool_id)
+      .eq("user_id", pick.user_id)
+      .single();
+
+    if (!pp) continue;
+
+    const newLives = Math.min(pp.lives_purchased, (pp.lives_remaining ?? 0) + 1);
+    const newStatus = pp.status === "eliminated" && newLives > 0 ? "alive" : pp.status;
+
+    await admin.from("pool_players")
+      .update({ lives_remaining: newLives, status: newStatus })
+      .eq("id", pp.id);
+  }
+
+  // Clear pick results
+  await admin.from("picks")
+    .update({ result: null })
+    .eq("athlete_id", athleteId)
+    .eq("round_id", roundId);
+
+  // Restore athlete to active
+  await admin.from("athletes")
+    .update({ status: "active", eliminated_in_round: null })
+    .eq("id", athleteId);
+
+  // Delete the athlete_result record
+  const { error } = await admin.from("athlete_results")
+    .delete()
+    .eq("athlete_id", athleteId)
+    .eq("round_id", roundId);
+
+  if (error) return { error: error.message };
+  return {};
+}
+
 export async function deleteTournament(
   tournamentId: string
 ): Promise<{ error?: string }> {
