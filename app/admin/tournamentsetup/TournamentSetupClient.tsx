@@ -685,8 +685,10 @@ function ManageTournament({
   const [activeRound, setActiveRound] = useState(
     rounds.find((r) => r.status === "active")?.round_number ?? rounds[0]?.round_number ?? 1
   );
-  // Confirmed results already saved to DB
+  // Confirmed results already saved to DB for the viewed round
   const [savedResults, setSavedResults] = useState<Record<string, "win" | "loss">>({});
+  // Confirmed results for the previous round — used to filter eligible athletes
+  const [prevRoundResults, setPrevRoundResults] = useState<Record<string, "win" | "loss">>({});
   // Pending selection the user has clicked but not yet saved
   const [pending, setPending] = useState<Record<string, "win" | "loss">>({});
   const [editingResultIds, setEditingResultIds] = useState<Set<string>>(() => new Set());
@@ -717,12 +719,14 @@ function ManageTournament({
     return r.id in deadlineOverrides ? { ...r, lock_deadline: deadlineOverrides[r.id] } : r;
   })();
 
-  // Athletes who were eligible to play in the viewed round
+  // Athletes eligible for the viewed round:
+  // Round 1: all non-bye athletes
+  // Round N: athletes with a confirmed win in round N-1, plus bye athletes advancing to round 2
   const activeAthletes = athletes.filter((a) => {
     if (!a.id) return false;
     if (activeRound === 1) return !a.has_bye;
-    const elimRound = eliminatedInRound.get(a.id) ?? a.eliminated_in_round ?? null;
-    return elimRound === null || elimRound >= activeRound;
+    if (activeRound === 2 && a.has_bye) return true;
+    return prevRoundResults[a.id] === "win";
   });
   const byeCount = activeRound === 1 ? athletes.filter((a) => a.has_bye).length : 0;
 
@@ -731,9 +735,13 @@ function ManageTournament({
     const roundData = rounds.find((r) => r.round_number === activeRound);
     if (!roundData?.id) return;
     setSavedResults({});
+    setPrevRoundResults({});
     setPending({});
     setEditingResultIds(new Set());
-    supabase
+
+    const prevRoundData = rounds.find((r) => r.round_number === activeRound - 1);
+
+    const currentQuery = supabase
       .from("athlete_results")
       .select("athlete_id, result")
       .eq("round_id", roundData.id)
@@ -742,7 +750,21 @@ function ManageTournament({
         (data ?? []).forEach((r: any) => { map[r.athlete_id] = r.result; });
         setSavedResults(map);
       });
-  }, [activeRound]);
+
+    if (prevRoundData) {
+      supabase
+        .from("athlete_results")
+        .select("athlete_id, result")
+        .eq("round_id", prevRoundData.id)
+        .then(({ data }) => {
+          const map: Record<string, "win" | "loss"> = {};
+          (data ?? []).forEach((r: any) => { map[r.athlete_id] = r.result; });
+          setPrevRoundResults(map);
+        });
+    }
+
+    return () => { void currentQuery; };
+  }, [activeRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelect = (athleteId: string, result: "win" | "loss") => {
     // If already saved as this result, do nothing
