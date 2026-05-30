@@ -25,6 +25,94 @@ function roundLabel(roundNumber: number, totalRounds: number): string {
   return `Round ${roundNumber}`;
 }
 
+export async function autoAssignMissedPicksForRound(
+  roundId: string,
+  roundNumber: number,
+  tournamentId: string
+): Promise<{ assigned: number; error?: string }> {
+  const admin = db();
+
+  const { data: pools } = await admin
+    .from("pools")
+    .select("id, missed_pick_rule")
+    .eq("tournament_id", tournamentId)
+    .eq("status", "active");
+
+  if (!pools?.length) return { assigned: 0 };
+
+  const { data: allAthletes } = await admin
+    .from("athletes")
+    .select("id, seed, has_bye")
+    .eq("tournament_id", tournamentId)
+    .eq("status", "active")
+    .order("seed", { nullsFirst: false })
+    .order("name");
+
+  if (!allAthletes?.length) return { assigned: 0 };
+
+  let assigned = 0;
+
+  for (const pool of pools) {
+    const { data: alivePlayers } = await admin
+      .from("pool_players")
+      .select("user_id")
+      .eq("pool_id", pool.id)
+      .eq("status", "alive");
+
+    if (!alivePlayers?.length) continue;
+
+    const { data: existingPicks } = await admin
+      .from("picks")
+      .select("user_id, athlete_id")
+      .eq("pool_id", pool.id)
+      .eq("round_id", roundId);
+
+    const pickedUserIds = new Set((existingPicks ?? []).map((p: any) => p.user_id));
+    const missingPlayers = alivePlayers.filter((p: any) => !pickedUserIds.has(p.user_id));
+
+    if (!missingPlayers.length) continue;
+
+    const { data: allPicks } = await admin
+      .from("picks")
+      .select("user_id, athlete_id")
+      .eq("pool_id", pool.id)
+      .neq("round_id", roundId);
+
+    for (const player of missingPlayers) {
+      const previousAthleteIds = new Set(
+        (allPicks ?? [])
+          .filter((p: any) => p.user_id === player.user_id)
+          .map((p: any) => p.athlete_id)
+      );
+
+      const available = (allAthletes ?? []).filter((a: any) => {
+        if (previousAthleteIds.has(a.id)) return false;
+        if (roundNumber === 1 && a.has_bye) return false;
+        return true;
+      });
+
+      if (!available.length) continue;
+
+      const selected =
+        pool.missed_pick_rule === "top_seed"
+          ? available[0]
+          : available[Math.floor(Math.random() * available.length)];
+
+      const { error } = await admin.from("picks").insert({
+        pool_id: pool.id,
+        round_id: roundId,
+        user_id: player.user_id,
+        athlete_id: selected.id,
+        is_auto_assigned: true,
+      });
+
+      if (!error) assigned++;
+    }
+  }
+
+  return { assigned };
+}
+
 export async function processAthleteResult(
   athleteId: string,
   roundId: string,

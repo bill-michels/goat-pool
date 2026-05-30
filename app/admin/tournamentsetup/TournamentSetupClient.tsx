@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -695,6 +695,8 @@ function ManageTournament({
   // Which athlete ID is currently mid-save
   const [savingId, setSavingId] = useState<string | null>(null);
   const [undoingId, setUndoingId] = useState<string | null>(null);
+  const [assigningPicks, setAssigningPicks] = useState(false);
+  const [assignedCount, setAssignedCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
@@ -1008,13 +1010,44 @@ function ManageTournament({
               {byeCount > 0 ? ` — ${byeCount} with a bye not included` : ""}
             </p>
           </div>
-          <span style={{
-            padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
-            backgroundColor: activeRoundData?.status === "completed" ? c.greenMuted : activeRoundData?.status === "active" ? c.amberMuted : c.grayLighter,
-            color: activeRoundData?.status === "completed" ? c.green : activeRoundData?.status === "active" ? c.amber : c.gray,
-          }}>
-            {activeRoundData?.status === "completed" ? "Completed" : activeRoundData?.status === "active" ? "In Progress" : "Upcoming"}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {assignedCount !== null && (
+              <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>
+                {assignedCount === 0 ? "No missing picks" : `${assignedCount} pick${assignedCount === 1 ? "" : "s"} assigned`}
+              </span>
+            )}
+            <button
+              onClick={async () => {
+                if (!activeRoundData) return;
+                setAssigningPicks(true);
+                setAssignedCount(null);
+                const { assigned } = await autoAssignMissedPicksForRound(
+                  activeRoundData.id,
+                  activeRound,
+                  tournament.id
+                );
+                setAssignedCount(assigned);
+                setAssigningPicks(false);
+                if (assigned > 0) router.refresh();
+              }}
+              disabled={assigningPicks}
+              style={{
+                padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
+                border: `1px solid ${c.grayLight}`, background: c.white,
+                color: c.charcoal, cursor: assigningPicks ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap" as const,
+              }}
+            >
+              {assigningPicks ? "Assigning..." : "Auto-Assign Missed Picks"}
+            </button>
+            <span style={{
+              padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
+              backgroundColor: activeRoundData?.status === "completed" ? c.greenMuted : activeRoundData?.status === "active" ? c.amberMuted : c.grayLighter,
+              color: activeRoundData?.status === "completed" ? c.green : activeRoundData?.status === "active" ? c.amber : c.gray,
+            }}>
+              {activeRoundData?.status === "completed" ? "Completed" : activeRoundData?.status === "active" ? "In Progress" : "Upcoming"}
+            </span>
+          </div>
         </div>
 
         <div style={{ borderRadius: "10px", overflow: "hidden", border: `1px solid ${c.grayLight}` }}>
