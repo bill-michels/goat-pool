@@ -8,8 +8,15 @@ const c = {
   gray: "#6B7280", grayLight: "#E5E7EB",
 };
 
-export default async function JoinPoolPage({ params }: { params: { token: string } }) {
+export default async function JoinPoolPage({
+  params,
+  searchParams,
+}: {
+  params: { token: string };
+  searchParams: { cancelled?: string };
+}) {
   const token = params.token;
+  const cancelled = searchParams.cancelled === "1";
 
   const adminClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -71,6 +78,7 @@ export default async function JoinPoolPage({ params }: { params: { token: string
       poolName={pool.name}
       tournamentName={tournament?.name ?? "—"}
       feePerLife={pool.fee_per_life ?? 0}
+      cancelled={cancelled}
     />
   );
 }

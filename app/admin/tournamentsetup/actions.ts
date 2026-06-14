@@ -258,6 +258,17 @@ export async function undoAthleteResult(
   return {};
 }
 
+export async function concludeTournamentPools(
+  tournamentId: string
+): Promise<void> {
+  const admin = db();
+  await admin
+    .from("pools")
+    .update({ status: "concluded" })
+    .eq("tournament_id", tournamentId)
+    .in("status", ["active", "open"]);
+}
+
 export async function deleteTournament(
   tournamentId: string
 ): Promise<{ error?: string }> {

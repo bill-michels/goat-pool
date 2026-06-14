@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import CommissionerNav from "../../CommissionerNav";
-import { sendInvites, resendInvite, approveJoinRequest, declineJoinRequest, updateAllowJoinRequests } from "./actions";
+import { sendInvites, resendInvite, approveJoinRequest, declineJoinRequest, updateAllowJoinRequests, processPayout } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -200,6 +200,9 @@ export default function ManagePoolClient({
   const [inviteSuccess, setInviteSuccess] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resentId, setResentId] = useState<string | null>(null);
+  const [payoutLoading, setPayoutLoading] = useState(false);
+  const [payoutError, setPayoutError] = useState<string | null>(null);
+  const [payoutDone, setPayoutDone] = useState(false);
 
   const completedAndActiveRounds = rounds.filter(
     (r) => r.status !== "upcoming"
@@ -1057,52 +1060,50 @@ export default function ManagePoolClient({
         )}
 
         {/* Payout Info */}
-        {pool.status === "concluded" && payout ? (
-          <div
-            style={{
-              marginTop: "28px",
-              padding: "20px",
-              borderRadius: "14px",
-              backgroundColor:
-                payout.status === "completed" ? c.greenMuted : c.amberMuted,
-              border: `1px solid ${c.grayLight}`,
-            }}
-          >
-            <p
-              style={{
-                fontSize: "14px",
-                color:
-                  payout.status === "completed" ? c.green : c.amber,
-                margin: 0,
-                fontWeight: 600,
-              }}
-            >
-              {payout.status === "completed"
-                ? `Your payout of $${(payout.amount / 100).toFixed(2)} has been transferred to your Stripe account.`
-                : `Your payout of $${(payout.amount / 100).toFixed(2)} is being processed.`}
+        {(payout?.status === "completed" || payoutDone) ? (
+          <div style={{ marginTop: "28px", padding: "20px", borderRadius: "14px", backgroundColor: c.greenMuted, border: `1px solid ${c.grayLight}` }}>
+            <p style={{ fontSize: "14px", color: c.green, margin: 0, fontWeight: 600 }}>
+              Your payout of ${((payout?.amount ?? earnings) / 100).toFixed(2)} has been transferred to your Stripe account.
             </p>
           </div>
-        ) : earnings > 0 ? (
-          <div
-            style={{
-              marginTop: "28px",
-              padding: "20px",
-              borderRadius: "14px",
-              backgroundColor: c.greenMuted,
-              border: `1px solid ${c.grayLight}`,
-            }}
-          >
-            <p
+        ) : pool.status === "concluded" && earnings > 0 ? (
+          <div style={{ marginTop: "28px", padding: "20px", borderRadius: "14px", backgroundColor: c.amberMuted, border: `1px solid ${c.grayLight}` }}>
+            <p style={{ fontSize: "15px", fontWeight: 700, color: c.amber, margin: "0 0 4px" }}>
+              Payout ready: ${(earnings / 100).toFixed(2)}
+            </p>
+            <p style={{ fontSize: "13px", color: c.amber, margin: "0 0 14px" }}>
+              The pool has concluded. Request your payout to transfer earnings to your connected Stripe account.
+            </p>
+            {payoutError && (
+              <p style={{ fontSize: "13px", color: c.red, margin: "0 0 10px" }}>{payoutError}</p>
+            )}
+            <button
+              disabled={payoutLoading}
+              onClick={async () => {
+                setPayoutLoading(true);
+                setPayoutError(null);
+                const result = await processPayout(pool.id, pool.slug);
+                if (result.error) {
+                  setPayoutError(result.error);
+                } else {
+                  setPayoutDone(true);
+                }
+                setPayoutLoading(false);
+              }}
               style={{
-                fontSize: "14px",
-                color: c.green,
-                margin: 0,
-                fontWeight: 600,
+                padding: "10px 20px", borderRadius: "8px", border: "none",
+                background: payoutLoading ? "#9CA3AF" : c.green,
+                color: c.white, fontSize: "14px", fontWeight: 600,
+                cursor: payoutLoading ? "not-allowed" : "pointer",
               }}
             >
-              Your payout of ${(earnings / 100).toFixed(2)} will be
-              transferred to your connected Stripe account when this pool
-              concludes.
+              {payoutLoading ? "Processing..." : "Request Payout"}
+            </button>
+          </div>
+        ) : earnings > 0 ? (
+          <div style={{ marginTop: "28px", padding: "20px", borderRadius: "14px", backgroundColor: c.greenMuted, border: `1px solid ${c.grayLight}` }}>
+            <p style={{ fontSize: "14px", color: c.green, margin: 0, fontWeight: 600 }}>
+              Your projected payout of ${(earnings / 100).toFixed(2)} will be available once the pool concludes.
             </p>
           </div>
         ) : null}

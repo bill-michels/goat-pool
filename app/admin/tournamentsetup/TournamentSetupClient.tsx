@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -713,8 +713,6 @@ function ManageTournament({
     return m;
   });
 
-  const currentActiveRoundNumber = rounds.find((r) => r.status === "active")?.round_number ?? 1;
-
   const activeRoundData = (() => {
     const r = rounds.find((r) => r.round_number === activeRound);
     if (!r) return r;
@@ -818,6 +816,7 @@ function ManageTournament({
         await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
       } else {
         await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
+        await concludeTournamentPools(tournament.id);
       }
       notifyRoundComplete(activeRoundData.id);
       router.refresh();
@@ -899,7 +898,7 @@ function ManageTournament({
       {/* Round Tabs */}
       <div style={{ display: "flex", gap: "6px", marginBottom: "28px" }}>
         {rounds.map((r) => {
-          const clickable = r.status === "completed" || r.status === "active" || r.round_number === currentActiveRoundNumber + 1;
+          const clickable = true;
           return (
             <button
               key={r.round_number}

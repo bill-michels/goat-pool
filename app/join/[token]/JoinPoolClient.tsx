@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { joinPool } from "./actions";
+import { joinPool, createCheckoutSession } from "./actions";
 
 const c = {
   green: "#4A7C59", greenMuted: "#E8F0EA", cream: "#F5F3EF",
@@ -14,21 +14,32 @@ type Props = {
   poolName: string;
   tournamentName: string;
   feePerLife: number;
+  cancelled?: boolean;
 };
 
-export default function JoinPoolClient({ token, poolName, tournamentName, feePerLife }: Props) {
+export default function JoinPoolClient({ token, poolName, tournamentName, feePerLife, cancelled }: Props) {
   const [lives, setLives] = useState<1 | 2>(1);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(cancelled ? "Payment was cancelled. You can try again below." : null);
   const [isPending, startTransition] = useTransition();
 
   const totalCents = feePerLife * lives;
   const totalDisplay = totalCents > 0 ? `$${(totalCents / 100).toFixed(2)}` : "Free";
+  const isPaid = feePerLife > 0;
 
   function handleJoin() {
     setError(null);
     startTransition(async () => {
-      const result = await joinPool(token, lives);
-      if (result?.error) setError(result.error);
+      if (!isPaid) {
+        const result = await joinPool(token, lives);
+        if (result?.error) setError(result.error);
+      } else {
+        const result = await createCheckoutSession(token, lives);
+        if (result.error) {
+          setError(result.error);
+        } else if (result.url) {
+          window.location.href = result.url;
+        }
+      }
     });
   }
 
@@ -86,23 +97,13 @@ export default function JoinPoolClient({ token, poolName, tournamentName, feePer
             <span style={{ fontSize: "18px", fontWeight: 800, color: c.charcoal }}>{totalDisplay}</span>
           </div>
 
-          {feePerLife > 0 && (
-            <div style={{
-              padding: "10px 14px", borderRadius: "8px", backgroundColor: c.amberMuted,
-              marginBottom: "20px",
-            }}>
-              <p style={{ fontSize: "12px", color: c.amber, margin: 0, fontWeight: 600 }}>
-                Payment collected outside the app. Your spot is reserved when you join.
-              </p>
-            </div>
-          )}
-
           {error && (
             <div style={{
-              padding: "10px 14px", borderRadius: "8px", backgroundColor: "#FEF2F2",
+              padding: "10px 14px", borderRadius: "8px",
+              backgroundColor: cancelled ? c.amberMuted : "#FEF2F2",
               marginBottom: "16px",
             }}>
-              <p style={{ fontSize: "13px", color: "#EF4444", margin: 0 }}>{error}</p>
+              <p style={{ fontSize: "13px", color: cancelled ? c.amber : "#EF4444", margin: 0 }}>{error}</p>
             </div>
           )}
 
@@ -116,12 +117,28 @@ export default function JoinPoolClient({ token, poolName, tournamentName, feePer
               cursor: isPending ? "not-allowed" : "pointer",
             }}
           >
-            {isPending ? "Joining..." : `Join Pool`}
+            {isPending
+              ? (isPaid ? "Redirecting to payment..." : "Joining...")
+              : isPaid ? `Pay ${totalDisplay} & Join` : "Join Pool"}
           </button>
 
-          <p style={{ fontSize: "13px", color: c.gray, textAlign: "center", margin: "12px 0 0" }}>
-            You can change your pick each round until the lock deadline.
-          </p>
+          {isPaid && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginTop: "12px" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={c.gray} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <p style={{ fontSize: "12px", color: c.gray, margin: 0 }}>
+                Secured by Stripe — we never see your card details
+              </p>
+            </div>
+          )}
+
+          {!isPaid && (
+            <p style={{ fontSize: "13px", color: c.gray, textAlign: "center", margin: "12px 0 0" }}>
+              You can change your pick each round until the lock deadline.
+            </p>
+          )}
         </div>
       </div>
     </div>

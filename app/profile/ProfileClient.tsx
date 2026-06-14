@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { updateUsername, updateEmail, updatePassword } from "./actions";
+import { updateUsername, updateEmail, updatePassword, createStripeConnectLink } from "./actions";
 
 const c = {
   green: "#4A7C59", greenMuted: "#E8F0EA", cream: "#F5F3EF",
   white: "#FFFFFF", charcoal: "#2D2D2D", gray: "#6B7280",
   grayLight: "#E5E7EB", grayLighter: "#F3F4F6",
   red: "#EF4444", redMuted: "#FEF2F2",
+  amber: "#D97706",
 };
 
 function LogoIcon() {
@@ -206,6 +207,7 @@ function PasswordRow() {
 
 export default function ProfileClient({
   username, email, memberSince, poolsPlayed, poolsWon, poolsCommissioned,
+  stripeConnected, stripeAccountId,
 }: {
   username: string;
   email: string;
@@ -213,9 +215,25 @@ export default function ProfileClient({
   poolsPlayed: number;
   poolsWon: number;
   poolsCommissioned: number;
+  stripeConnected: boolean;
+  stripeAccountId: string | null;
 }) {
   const router = useRouter();
   const initials = username.slice(0, 2).toUpperCase();
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+
+  const handleConnectStripe = async () => {
+    setStripeLoading(true);
+    setStripeError(null);
+    const result = await createStripeConnectLink();
+    if (result.error) {
+      setStripeError(result.error);
+      setStripeLoading(false);
+    } else if (result.url) {
+      window.location.href = result.url;
+    }
+  };
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -306,6 +324,59 @@ export default function ProfileClient({
                 <p style={{ fontSize: "24px", fontWeight: 800, color, margin: 0 }}>{value}</p>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Stripe Payouts */}
+        <div style={{ backgroundColor: c.white, borderRadius: "14px", border: `1px solid ${c.grayLight}`, overflow: "hidden", marginBottom: "24px" }}>
+          <div style={{ padding: "14px 24px", borderBottom: `1px solid ${c.grayLight}` }}>
+            <p style={{ fontSize: "12px", fontWeight: 700, color: c.charcoal, margin: 0, textTransform: "uppercase", letterSpacing: "0.5px" }}>Payouts — Commissioner</p>
+          </div>
+          <div style={{ padding: "20px 24px" }}>
+            {stripeConnected ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: c.green, flexShrink: 0 }} />
+                <div>
+                  <p style={{ fontSize: "15px", fontWeight: 600, color: c.charcoal, margin: "0 0 2px" }}>Stripe Connected</p>
+                  <p style={{ fontSize: "13px", color: c.gray, margin: 0 }}>You&apos;re set up to receive payouts when your pools conclude.</p>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: "14px", color: c.gray, margin: "0 0 16px", lineHeight: 1.6 }}>
+                  Connect a Stripe account to receive your earnings when a pool you commissioned concludes. Takes about 2 minutes.
+                </p>
+                {stripeError && (
+                  <p style={{ fontSize: "13px", color: c.red, margin: "0 0 12px" }}>{stripeError}</p>
+                )}
+                <button
+                  onClick={handleConnectStripe}
+                  disabled={stripeLoading}
+                  style={{
+                    padding: "10px 20px", borderRadius: "8px", border: "none",
+                    background: stripeLoading ? "#9CA3AF" : c.green,
+                    color: c.white, fontSize: "14px", fontWeight: 600,
+                    cursor: stripeLoading ? "not-allowed" : "pointer",
+                    display: "flex", alignItems: "center", gap: "8px",
+                  }}
+                >
+                  {stripeLoading ? "Redirecting..." : (
+                    <>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+                        <line x1="1" y1="10" x2="23" y2="10"/>
+                      </svg>
+                      Connect Stripe Account
+                    </>
+                  )}
+                </button>
+                {stripeAccountId && !stripeConnected && (
+                  <p style={{ fontSize: "12px", color: c.amber, margin: "10px 0 0" }}>
+                    Setup incomplete — click above to finish connecting.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

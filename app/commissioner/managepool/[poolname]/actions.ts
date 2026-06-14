@@ -1,9 +1,11 @@
 "use server";
 
+import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { resend, FROM, appUrl } from "@/lib/resend";
 import { inviteEmail } from "@/lib/emails";
 import { revalidatePath } from "next/cache";
+import { stripe } from "@/lib/stripe";
 
 const db = () =>
   createServiceClient(
@@ -180,6 +182,80 @@ export async function updateAllowJoinRequests(
     .eq("id", poolId);
 
   if (error) return { error: error.message };
+  revalidatePath(`/commissioner/managepool/${poolSlug}`);
+  return {};
+}
+
+export async function processPayout(
+  poolId: string,
+  poolSlug: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const admin = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: pool } = await admin
+    .from("pools")
+    .select("id, name, take_rate, commissioner_id, users(stripe_connect_account_id, stripe_connect_onboarded)")
+    .eq("id", poolId)
+    .single();
+
+  if (!pool) return { error: "Pool not found." };
+  if (pool.commissioner_id !== user.id) return { error: "Not authorized." };
+
+  const commissioner = pool.users as any;
+  if (!commissioner?.stripe_connect_account_id || !commissioner?.stripe_connect_onboarded) {
+    return { error: "Please connect your Stripe account in your profile before requesting a payout." };
+  }
+
+  const { data: existingPayout } = await admin
+    .from("payouts")
+    .select("id, status")
+    .eq("pool_id", poolId)
+    .maybeSingle();
+
+  if (existingPayout?.status === "completed") {
+    return { error: "Payout has already been processed for this pool." };
+  }
+
+  const { data: payments } = await admin
+    .from("payments")
+    .select("amount")
+    .eq("pool_id", poolId)
+    .eq("status", "completed");
+
+  const total = (payments ?? []).reduce((sum: number, p: any) => sum + p.amount, 0);
+  if (total === 0) return { error: "No completed payments to pay out." };
+
+  const platformAmount = Math.floor(total * pool.take_rate / 100);
+  const commissionerAmount = total - platformAmount;
+
+  const transfer = await stripe.transfers.create({
+    amount: commissionerAmount,
+    currency: "usd",
+    destination: commissioner.stripe_connect_account_id,
+    transfer_group: poolId,
+    metadata: { pool_id: poolId, pool_name: pool.name },
+  });
+
+  await admin.from("payouts").upsert(
+    {
+      pool_id: poolId,
+      commissioner_id: user.id,
+      amount: commissionerAmount,
+      platform_amount: platformAmount,
+      stripe_transfer_id: transfer.id,
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    },
+    { onConflict: "pool_id" }
+  );
+
   revalidatePath(`/commissioner/managepool/${poolSlug}`);
   return {};
 }
