@@ -60,7 +60,10 @@ export default function PoolViewClient({
   const usedPicks = myPlayer?.completedPicks ?? [];
 
   const isAlive = membership?.status === "alive";
-  const canPickRound = activeRound && isAlive;
+  const activeRoundIsLocked = activeRound?.lockDeadline
+    ? new Date(activeRound.lockDeadline) < new Date()
+    : false;
+  const canPickRound = activeRound && isAlive && !activeRoundIsLocked;
   const pickButtonLabel = canPickRound
     ? (activeRound.hasPick ? "Change Pick" : "Place Pick")
     : null;
@@ -113,6 +116,16 @@ export default function PoolViewClient({
             }}>
               {pickButtonLabel}
             </Link>
+          )}
+          {activeRound && isAlive && activeRoundIsLocked && (
+            <div style={{
+              padding: "12px 20px", borderRadius: "10px",
+              backgroundColor: c.amberMuted, border: `1px solid #FCD34D`,
+              textAlign: "center",
+            }}>
+              <p style={{ fontSize: "13px", fontWeight: 700, color: c.amber, margin: "0 0 2px" }}>Picks Locked</p>
+              <p style={{ fontSize: "12px", color: c.amber, margin: 0 }}>Awaiting round results</p>
+            </div>
           )}
         </div>
 

@@ -130,7 +130,7 @@ export default async function AdminPage() {
 
   // Fetch pool lists for live tournaments
   const liveTournamentIds = (liveTournaments ?? []).map((t) => t.id);
-  let tournamentPoolMap: Record<string, any[]> = {};
+  const tournamentPoolMap: Record<string, any[]> = {};
   if (liveTournamentIds.length > 0) {
     const { data: tPools } = await admin
       .from("pools")

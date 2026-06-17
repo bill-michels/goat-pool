@@ -810,6 +810,7 @@ function ManageTournament({
     // Auto-complete the round when every match has a saved result
     const allDone = activeAthletes.every((a) => newSaved[a.id!] !== undefined);
     if (allDone && activeRoundData.status !== "completed") {
+      await autoAssignMissedPicksForRound(activeRoundData.id, activeRound, tournament.id);
       await supabase.from("rounds").update({ status: "completed" }).eq("id", activeRoundData.id);
       const nextRound = rounds.find((r) => r.round_number === activeRound + 1);
       if (nextRound) {
