@@ -12,6 +12,71 @@ const adminClient = () =>
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
+async function autoAssignIfLocked(poolId: string, userId: string, db: ReturnType<typeof adminClient>) {
+  const { data: pool } = await db
+    .from("pools")
+    .select("tournament_id, missed_pick_rule")
+    .eq("id", poolId)
+    .single();
+
+  if (!pool) return;
+
+  const { data: round } = await db
+    .from("rounds")
+    .select("id, round_number, lock_deadline")
+    .eq("tournament_id", pool.tournament_id)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!round?.lock_deadline || round.lock_deadline > new Date().toISOString()) return;
+
+  const { data: existing } = await db
+    .from("picks")
+    .select("id")
+    .eq("pool_id", poolId)
+    .eq("round_id", round.id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existing) return;
+
+  const { data: previousPicks } = await db
+    .from("picks")
+    .select("athlete_id")
+    .eq("pool_id", poolId)
+    .eq("user_id", userId);
+
+  const usedIds = new Set((previousPicks ?? []).map((p: any) => p.athlete_id));
+
+  const { data: athletes } = await db
+    .from("athletes")
+    .select("id, seed, has_bye")
+    .eq("tournament_id", pool.tournament_id)
+    .eq("status", "active")
+    .order("seed", { nullsFirst: false })
+    .order("name");
+
+  const available = (athletes ?? []).filter((a: any) => {
+    if (usedIds.has(a.id)) return false;
+    if (round.round_number === 1 && a.has_bye) return false;
+    return true;
+  });
+
+  if (!available.length) return;
+
+  const selected = pool.missed_pick_rule === "top_seed"
+    ? available[0]
+    : available[Math.floor(Math.random() * available.length)];
+
+  await db.from("picks").insert({
+    pool_id: poolId,
+    round_id: round.id,
+    user_id: userId,
+    athlete_id: selected.id,
+    is_auto_assigned: true,
+  });
+}
+
 // Used for free pools — inserts pool_player immediately and redirects
 export async function joinPool(token: string, lives: number): Promise<{ error: string } | never> {
   const supabase = createClient();
@@ -60,6 +125,8 @@ export async function joinPool(token: string, lives: number): Promise<{ error: s
     .from("pool_invites")
     .update({ status: "accepted", accepted_at: new Date().toISOString() })
     .eq("id", invite.id);
+
+  await autoAssignIfLocked(pool.id, user.id, db);
 
   redirect(`/player/${pool.slug}`);
 }
