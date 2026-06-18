@@ -697,6 +697,7 @@ function ManageTournament({
   const [undoingId, setUndoingId] = useState<string | null>(null);
   const [assigningPicks, setAssigningPicks] = useState(false);
   const [assignedCount, setAssignedCount] = useState<number | null>(null);
+  const [openingNextRound, setOpeningNextRound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
@@ -1040,6 +1041,32 @@ function ManageTournament({
             >
               {assigningPicks ? "Assigning..." : "Auto-Assign Missed Picks"}
             </button>
+            {(() => {
+              const nextRound = rounds.find(r => r.round_number === activeRound + 1);
+              const nextRoundAlreadyOpen = nextRound?.status === "active";
+              if (!nextRound || activeRoundData?.status === "completed") return null;
+              return (
+                <button
+                  onClick={async () => {
+                    if (!nextRound || nextRoundAlreadyOpen) return;
+                    setOpeningNextRound(true);
+                    await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
+                    setOpeningNextRound(false);
+                    router.refresh();
+                  }}
+                  disabled={openingNextRound || nextRoundAlreadyOpen}
+                  style={{
+                    padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
+                    border: `1px solid ${c.grayLight}`, background: nextRoundAlreadyOpen ? c.greenMuted : c.white,
+                    color: nextRoundAlreadyOpen ? c.green : c.charcoal,
+                    cursor: openingNextRound || nextRoundAlreadyOpen ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap" as const,
+                  }}
+                >
+                  {nextRoundAlreadyOpen ? `Round ${activeRound + 1} Open` : openingNextRound ? "Opening..." : `Open Round ${activeRound + 1} for Picks`}
+                </button>
+              );
+            })()}
             <span style={{
               padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
               backgroundColor: activeRoundData?.status === "completed" ? c.greenMuted : activeRoundData?.status === "active" ? c.amberMuted : c.grayLighter,

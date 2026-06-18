@@ -123,8 +123,10 @@ export default function PoolViewClient({
               backgroundColor: c.amberMuted, border: `1px solid #FCD34D`,
               textAlign: "center",
             }}>
-              <p style={{ fontSize: "13px", fontWeight: 700, color: c.amber, margin: "0 0 2px" }}>Picks Locked</p>
-              <p style={{ fontSize: "12px", color: c.amber, margin: 0 }}>Awaiting round results</p>
+              <p style={{ fontSize: "13px", fontWeight: 700, color: c.amber, margin: "0 0 2px" }}>
+                {roundLabel(activeRound.roundNumber, pool.totalRounds)} Picks Locked
+              </p>
+              <p style={{ fontSize: "12px", color: c.amber, margin: 0 }}>Awaiting results</p>
             </div>
           )}
         </div>

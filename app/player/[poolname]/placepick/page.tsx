@@ -39,12 +39,18 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
 
   if (!membership || membership.status !== "alive") redirect(`/player/${pool.slug}`);
 
-  const { data: activeRound } = await adminClient
+  const { data: activeRounds } = await adminClient
     .from("rounds")
     .select("id, round_number, status, lock_deadline")
     .eq("tournament_id", tournamentId)
     .eq("status", "active")
-    .maybeSingle();
+    .order("round_number");
+
+  const now = new Date().toISOString();
+  // Prefer a round whose lock deadline hasn't passed yet; fall back to any active round
+  const activeRound = (activeRounds ?? []).find(r => !r.lock_deadline || r.lock_deadline > now)
+    ?? (activeRounds ?? [])[0]
+    ?? null;
 
   if (!activeRound) {
     return (
