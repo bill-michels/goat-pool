@@ -37,11 +37,14 @@ type Props = {
   previousPickNames: string[];
   existingPickId: string | null;
   existingPickAthleteId: string | null;
+  isPreviewOnly: boolean;
+  previousRoundLabel: string | null;
 };
 
 export default function PlacePickClient({
   username, isCommissioner, pool, activeRound, membership,
   athletes, previousPickNames, existingPickId, existingPickAthleteId,
+  isPreviewOnly, previousRoundLabel,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(existingPickAthleteId);
   const [search, setSearch] = useState("");
@@ -114,11 +117,25 @@ export default function PlacePickClient({
         </div>
 
         <h1 style={{ fontSize: "28px", fontWeight: 800, color: c.charcoal, margin: "0 0 4px", letterSpacing: "-0.5px" }}>
-          {rLabel} — {existingPickId ? "Change Your Pick" : "Place Your Pick"}
+          {rLabel} — {isPreviewOnly ? "Preview Picks" : existingPickId ? "Change Your Pick" : "Place Your Pick"}
         </h1>
         <p style={{ fontSize: "15px", color: c.gray, margin: "0 0 24px" }}>
-          Choose one athlete to win this round.
+          {isPreviewOnly ? "Browse available athletes for this round." : "Choose one athlete to win this round."}
         </p>
+
+        {isPreviewOnly && (
+          <div style={{
+            backgroundColor: c.amberMuted, border: `1px solid #FCD34D`,
+            borderRadius: "12px", padding: "14px 18px", marginBottom: "24px",
+          }}>
+            <p style={{ fontSize: "14px", fontWeight: 700, color: c.amber, margin: "0 0 4px" }}>
+              {previousRoundLabel} results still coming in
+            </p>
+            <p style={{ fontSize: "13px", color: c.amber, margin: 0 }}>
+              You can browse available athletes now, but your pick will unlock once all {previousRoundLabel} matches are final.
+            </p>
+          </div>
+        )}
 
         {/* Life + Deadline Bar */}
         <div style={{ display: "flex", gap: "12px", marginBottom: "24px" }}>
@@ -242,7 +259,7 @@ export default function PlacePickClient({
 
         <button
           onClick={() => {
-            if (!selectedId || isPending) return;
+            if (!selectedId || isPending || isPreviewOnly) return;
             if (!existingPickId) {
               setConfirmed(true);
               handleConfirm();
@@ -250,16 +267,18 @@ export default function PlacePickClient({
               handleConfirm();
             }
           }}
-          disabled={!selectedId || isPending}
+          disabled={!selectedId || isPending || isPreviewOnly}
           style={{
             width: "100%", padding: "14px", borderRadius: "10px", border: "none",
-            background: selectedId && !isPending ? c.green : c.grayLight,
-            color: selectedId && !isPending ? c.white : c.gray,
+            background: selectedId && !isPending && !isPreviewOnly ? c.green : c.grayLight,
+            color: selectedId && !isPending && !isPreviewOnly ? c.white : c.gray,
             fontSize: "16px", fontWeight: 600,
-            cursor: selectedId && !isPending ? "pointer" : "default",
+            cursor: selectedId && !isPending && !isPreviewOnly ? "pointer" : "default",
           }}
         >
-          {isPending
+          {isPreviewOnly
+            ? `Picks open when ${previousRoundLabel} results are final`
+            : isPending
             ? "Saving..."
             : selectedAthlete
             ? `Confirm Pick: ${selectedAthlete.name}`
@@ -267,7 +286,7 @@ export default function PlacePickClient({
         </button>
 
         <p style={{ fontSize: "13px", color: c.gray, textAlign: "center", margin: "12px 0 0" }}>
-          You can change your pick until the round locks.
+          {isPreviewOnly ? "" : "You can change your pick until the round locks."}
         </p>
       </div>
     </div>

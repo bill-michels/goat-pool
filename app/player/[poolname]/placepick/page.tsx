@@ -39,18 +39,24 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
 
   if (!membership || membership.status !== "alive") redirect(`/player/${pool.slug}`);
 
-  const { data: activeRounds } = await adminClient
+  const { data: allRounds } = await adminClient
     .from("rounds")
     .select("id, round_number, status, lock_deadline")
     .eq("tournament_id", tournamentId)
-    .eq("status", "active")
     .order("round_number");
 
   const now = new Date().toISOString();
+  const activeRounds = (allRounds ?? []).filter(r => r.status === "active");
   // Prefer a round whose lock deadline hasn't passed yet; fall back to any active round
-  const activeRound = (activeRounds ?? []).find(r => !r.lock_deadline || r.lock_deadline > now)
-    ?? (activeRounds ?? [])[0]
+  const activeRound = activeRounds.find(r => !r.lock_deadline || r.lock_deadline > now)
+    ?? activeRounds[0]
     ?? null;
+
+  // Check if the previous round is fully completed
+  const previousRound = activeRound
+    ? (allRounds ?? []).find(r => r.round_number === activeRound.round_number - 1)
+    : null;
+  const isPreviousRoundComplete = !previousRound || previousRound.status === "completed";
 
   if (!activeRound) {
     return (
@@ -102,7 +108,8 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
     ? new Date(activeRound.lock_deadline) < new Date()
     : false;
 
-  if (isLocked) {
+  // If locked and no next round is open, send them back to the pool view
+  if (isLocked && activeRounds.length === 1) {
     redirect(`/player/${pool.slug}`);
   }
 
@@ -125,6 +132,14 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       previousPickNames={previousPickNames}
       existingPickId={existingPickForRound?.id ?? null}
       existingPickAthleteId={existingPickForRound?.athlete_id ?? null}
+      isPreviewOnly={!isPreviousRoundComplete}
+      previousRoundLabel={previousRound ? (() => {
+        const fromEnd = totalRounds - previousRound.round_number;
+        if (fromEnd === 0) return "Final";
+        if (fromEnd === 1) return "SF";
+        if (fromEnd === 2) return "QF";
+        return `Round ${previousRound.round_number}`;
+      })() : null}
     />
   );
 }
