@@ -52,7 +52,11 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
       .eq("pool_id", pool.id),
   ]);
 
-  const activeRound = (rounds ?? []).find((r: any) => r.status === "active") ?? null;
+  const now = new Date().toISOString();
+  const activeRound =
+    (rounds ?? []).find((r: any) => r.status === "active" && (!r.lock_deadline || r.lock_deadline > now))
+    ?? (rounds ?? []).find((r: any) => r.status === "active")
+    ?? null;
   const completedRoundIds = new Set(
     (rounds ?? []).filter((r: any) => r.status === "locked" || r.status === "completed").map((r: any) => r.id)
   );
