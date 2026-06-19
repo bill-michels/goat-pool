@@ -808,22 +808,6 @@ function ManageTournament({
     setPending((prev) => { const n = { ...prev }; delete n[athleteId]; return n; });
     setEditingResultIds((prev) => { const s = new Set(prev); s.delete(athleteId); return s; });
     setSavingId(null);
-
-    // Auto-complete the round when every match has a saved result
-    const allDone = activeAthletes.every((a) => newSaved[a.id!] !== undefined);
-    if (allDone && activeRoundData.status !== "completed") {
-      await autoAssignMissedPicksForRound(activeRoundData.id, activeRound, tournament.id);
-      await supabase.from("rounds").update({ status: "completed" }).eq("id", activeRoundData.id);
-      const nextRound = rounds.find((r) => r.round_number === activeRound + 1);
-      if (nextRound) {
-        await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-      } else {
-        await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
-        await concludeTournamentPools(tournament.id);
-      }
-      notifyRoundComplete(activeRoundData.id);
-      router.refresh();
-    }
   };
 
   const savedCount = activeAthletes.filter((a) => savedResults[a.id!] !== undefined).length;
@@ -1068,35 +1052,41 @@ function ManageTournament({
                 </button>
               );
             })()}
-            {activeRoundData?.status === "active" && savedCount === activeAthletes.length && activeAthletes.length > 0 && (
-              <button
-                onClick={async () => {
-                  if (!activeRoundData) return;
-                  setCompletingRound(true);
-                  await autoAssignMissedPicksForRound(activeRoundData.id, activeRound, tournament.id);
-                  await supabase.from("rounds").update({ status: "completed" }).eq("id", activeRoundData.id);
-                  const nextRound = rounds.find((r) => r.round_number === activeRound + 1);
-                  if (nextRound) {
-                    await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-                  } else {
-                    await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
-                    await concludeTournamentPools(tournament.id);
-                  }
-                  notifyRoundComplete(activeRoundData.id);
-                  setCompletingRound(false);
-                  router.refresh();
-                }}
-                disabled={completingRound}
-                style={{
-                  padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                  border: "none", background: c.green, color: c.white,
-                  cursor: completingRound ? "not-allowed" : "pointer",
-                  whiteSpace: "nowrap" as const,
-                }}
-              >
-                {completingRound ? "Completing..." : "Complete Round"}
-              </button>
-            )}
+            {activeRoundData?.status === "active" && activeAthletes.length > 0 && (() => {
+              const allSaved = savedCount === activeAthletes.length;
+              const isDisabled = completingRound || !allSaved;
+              return (
+                <button
+                  onClick={async () => {
+                    if (!activeRoundData || !allSaved) return;
+                    setCompletingRound(true);
+                    await autoAssignMissedPicksForRound(activeRoundData.id, activeRound, tournament.id);
+                    await supabase.from("rounds").update({ status: "completed" }).eq("id", activeRoundData.id);
+                    const nextRound = rounds.find((r) => r.round_number === activeRound + 1);
+                    if (nextRound) {
+                      await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
+                    } else {
+                      await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
+                      await concludeTournamentPools(tournament.id);
+                    }
+                    notifyRoundComplete(activeRoundData.id);
+                    setCompletingRound(false);
+                    router.refresh();
+                  }}
+                  disabled={isDisabled}
+                  style={{
+                    padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
+                    border: `1px solid ${allSaved ? c.green : c.grayLight}`,
+                    background: allSaved ? c.green : c.white,
+                    color: allSaved ? c.white : c.gray,
+                    cursor: isDisabled ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap" as const,
+                  }}
+                >
+                  {completingRound ? "Completing..." : "Complete Round"}
+                </button>
+              );
+            })()}
             <span style={{
               padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
               backgroundColor: activeRoundData?.status === "completed" ? c.greenMuted : activeRoundData?.status === "active" ? c.amberMuted : c.grayLighter,
