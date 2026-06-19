@@ -72,7 +72,13 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
     );
   }
 
-  const [{ data: userPicks }, { data: athletes }] = await Promise.all([
+  // For rounds > 1, fetch the win results from the previous completed round
+  // so we only show athletes who actually advanced (not just those with status="active")
+  const prevCompletedRound = activeRound.round_number > 1
+    ? (allRounds ?? []).find(r => r.round_number === activeRound.round_number - 1 && r.status === "completed")
+    : null;
+
+  const [{ data: userPicks }, { data: athletes }, { data: prevRoundWinners }] = await Promise.all([
     adminClient.from("picks").select("id, round_id, athlete_id").eq("pool_id", pool.id).eq("user_id", user.id),
     adminClient
       .from("athletes")
@@ -81,7 +87,16 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       .eq("status", "active")
       .order("seed", { nullsFirst: false })
       .order("name"),
+    prevCompletedRound
+      ? adminClient
+          .from("athlete_results")
+          .select("athlete_id")
+          .eq("round_id", prevCompletedRound.id)
+          .eq("result", "win")
+      : Promise.resolve({ data: null }),
   ]);
+
+  const winnerIds = prevRoundWinners ? new Set(prevRoundWinners.map((r: any) => r.athlete_id)) : null;
 
   const previousPickAthleteIds = new Set(
     (userPicks ?? [])
@@ -94,6 +109,8 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
   const availableAthletes = (athletes ?? []).filter((a: any) => {
     if (previousPickAthleteIds.has(a.id)) return false;
     if (activeRound.round_number === 1 && a.has_bye) return false;
+    // For rounds > 1 when previous round is completed, only show athletes who won
+    if (winnerIds && !winnerIds.has(a.id)) return false;
     return true;
   });
 
