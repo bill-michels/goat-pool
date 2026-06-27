@@ -1,6 +1,9 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PlayerNav from "./PlayerNav";
+import { requestToJoin } from "../pools/actions";
 
 const c = {
   green: "#4A7C59", greenMuted: "#E8F0EA", cream: "#F5F3EF",
@@ -146,13 +149,110 @@ function PoolCard({ pool }: { pool: PoolEntry }) {
   );
 }
 
+type JoinablePool = {
+  id: string;
+  name: string;
+  slug: string;
+  feePerLife: number;
+  tournamentName: string;
+  playerCount: number;
+};
+
+function JoinablePoolsSection({ pools }: { pools: JoinablePool[] }) {
+  const router = useRouter();
+  const [requesting, setRequesting] = useState<string | null>(null);
+  const [requested, setRequested] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+
+  if (pools.length === 0) return null;
+
+  const handleRequest = async (poolId: string) => {
+    setRequesting(poolId);
+    setError(null);
+    const result = await requestToJoin(poolId);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setRequested(prev => { const s = new Set(prev); s.add(poolId); return s; });
+      router.refresh();
+    }
+    setRequesting(null);
+  };
+
+  return (
+    <div style={{ marginBottom: "32px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: c.green }} />
+          <h2 style={{ fontSize: "16px", fontWeight: 700, color: c.charcoal, margin: 0 }}>Pools You Can Join</h2>
+        </div>
+        <Link href="/pools" style={{ fontSize: "13px", color: c.green, fontWeight: 600, textDecoration: "none" }}>
+          See all →
+        </Link>
+      </div>
+
+      {error && (
+        <div style={{ padding: "10px 14px", borderRadius: "8px", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", color: "#EF4444", fontSize: "13px", marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        {pools.map((pool) => {
+          const isReq = requested.has(pool.id);
+          const isLoading = requesting === pool.id;
+          return (
+            <div key={pool.id} style={{
+              backgroundColor: c.white, borderRadius: "14px", padding: "18px 20px",
+              border: `1px solid ${c.grayLight}`,
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px",
+            }}>
+              <div>
+                <p style={{ fontSize: "15px", fontWeight: 700, color: c.charcoal, margin: "0 0 2px" }}>{pool.name}</p>
+                <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 6px" }}>{pool.tournamentName}</p>
+                <div style={{ display: "flex", gap: "14px", fontSize: "12px", color: c.gray }}>
+                  <span><strong style={{ color: c.charcoal }}>{pool.playerCount}</strong> players</span>
+                  <span><strong style={{ color: c.charcoal }}>{pool.feePerLife > 0 ? `$${(pool.feePerLife / 100).toFixed(2)}` : "Free"}</strong>{pool.feePerLife > 0 ? " per life" : ""}</span>
+                </div>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                {isReq ? (
+                  <span style={{ padding: "8px 16px", borderRadius: "8px", backgroundColor: c.greenMuted, color: c.green, fontSize: "13px", fontWeight: 600 }}>
+                    Requested ✓
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => handleRequest(pool.id)}
+                    disabled={isLoading}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: isLoading ? c.grayLight : c.green,
+                      color: isLoading ? c.gray : c.white,
+                      fontSize: "13px", fontWeight: 600,
+                      cursor: isLoading ? "not-allowed" : "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {isLoading ? "Requesting..." : "Request to Join"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   username: string;
   isCommissioner: boolean;
   pools: PoolEntry[];
+  joinablePools: JoinablePool[];
 };
 
-export default function PlayerDashClient({ username, isCommissioner, pools }: Props) {
+export default function PlayerDashClient({ username, isCommissioner, pools, joinablePools }: Props) {
   const isCurrentPool = (p: PoolEntry) =>
     p.playerStatus === "alive" && (p.poolStatus === "active" || p.poolStatus === "open");
 
@@ -220,6 +320,8 @@ export default function PlayerDashClient({ username, isCommissioner, pools }: Pr
             </div>
           </div>
         )}
+
+        <JoinablePoolsSection pools={joinablePools} />
 
         {/* Start a Pool CTA */}
         <div style={{

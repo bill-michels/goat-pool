@@ -75,16 +75,40 @@ export default async function PlayerPage() {
     };
   });
 
-  const { count: ownedPoolCount } = await adminClient
-    .from("pools")
-    .select("id", { count: "exact", head: true })
-    .eq("commissioner_id", user.id);
+  const myPoolIds = new Set(
+    (memberships ?? []).map((m: any) => (m.pools as any)?.id).filter(Boolean) as string[]
+  );
+
+  const [{ count: ownedPoolCount }, { data: openPools }, { data: pendingRequests }] = await Promise.all([
+    adminClient.from("pools").select("id", { count: "exact", head: true }).eq("commissioner_id", user.id),
+    adminClient
+      .from("pools")
+      .select("id, name, slug, fee_per_life, tournaments(name), pool_players(count)")
+      .eq("allow_join_requests", true)
+      .eq("status", "active")
+      .order("name"),
+    adminClient.from("join_requests").select("pool_id").eq("user_id", user.id).eq("status", "pending"),
+  ]);
+
+  const pendingPoolIds = new Set((pendingRequests ?? []).map((r: any) => r.pool_id as string));
+
+  const joinablePools = (openPools ?? [])
+    .filter((p: any) => !myPoolIds.has(p.id) && !pendingPoolIds.has(p.id))
+    .map((p: any) => ({
+      id: p.id as string,
+      name: p.name as string,
+      slug: p.slug as string,
+      feePerLife: (p.fee_per_life ?? 0) as number,
+      tournamentName: ((p.tournaments as any)?.name ?? "—") as string,
+      playerCount: (p.pool_players?.[0]?.count ?? 0) as number,
+    }));
 
   return (
     <PlayerDashClient
       username={userData?.username ?? "?"}
       isCommissioner={userData?.role === "commissioner" || userData?.role === "admin" || (ownedPoolCount ?? 0) > 0}
       pools={poolEntries}
+      joinablePools={joinablePools}
     />
   );
 }

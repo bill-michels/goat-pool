@@ -14,6 +14,15 @@ const c = {
   grayLighter: "#F3F4F6",
 };
 
+type OpenPool = {
+  id: string;
+  name: string;
+  slug: string;
+  feePerLife: number;
+  tournamentName: string;
+  playerCount: number;
+};
+
 function LogoIcon({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
@@ -136,7 +145,7 @@ function Nav() {
   );
 }
 
-function Hero() {
+function Hero({ hasOpenPools }: { hasOpenPools: boolean }) {
   return (
     <section style={{ padding: "80px 40px", textAlign: "center", backgroundColor: c.cream }}>
       <div style={{ maxWidth: "700px", margin: "0 auto" }}>
@@ -199,7 +208,7 @@ function Hero() {
           }}>
             Start a Pool
           </Link>
-          <Link href="/login?mode=signup" style={{
+          <Link href="/pools" style={{
             padding: "14px 28px",
             borderRadius: "12px",
             border: `1.5px solid ${c.grayLight}`,
@@ -209,8 +218,87 @@ function Hero() {
             fontWeight: 600,
             textDecoration: "none",
           }}>
-            Join a Pool
+            {hasOpenPools ? "Find an Open Pool" : "Find a Pool"}
           </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OpenPoolsSection({ pools }: { pools: OpenPool[] }) {
+  if (pools.length === 0) return null;
+
+  return (
+    <section style={{ padding: "56px 40px", backgroundColor: c.green }}>
+      <div style={{ maxWidth: "900px", margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "28px" }}>
+          <div>
+            <p style={{ fontSize: "13px", fontWeight: 700, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 6px" }}>
+              Pools Open Now
+            </p>
+            <h2 style={{ fontSize: "28px", fontWeight: 800, color: c.white, margin: 0, letterSpacing: "-0.5px" }}>
+              {pools.length === 1
+                ? "1 pool is accepting players"
+                : `${pools.length} pools are accepting players`}
+            </h2>
+          </div>
+          <Link href="/pools" style={{
+            padding: "10px 20px",
+            borderRadius: "10px",
+            background: "rgba(255,255,255,0.15)",
+            border: "1px solid rgba(255,255,255,0.3)",
+            color: c.white,
+            fontSize: "14px",
+            fontWeight: 600,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}>
+            See all pools →
+          </Link>
+        </div>
+
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${Math.min(pools.length, 3)}, 1fr)`,
+          gap: "12px",
+        }}>
+          {pools.slice(0, 3).map((pool) => (
+            <div key={pool.id} style={{
+              backgroundColor: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "14px",
+              padding: "20px 24px",
+            }}>
+              <p style={{ fontSize: "16px", fontWeight: 700, color: c.white, margin: "0 0 4px" }}>{pool.name}</p>
+              <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.7)", margin: "0 0 16px" }}>{pool.tournamentName}</p>
+              <div style={{ display: "flex", gap: "16px", marginBottom: "18px" }}>
+                <div>
+                  <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 2px" }}>Players</p>
+                  <p style={{ fontSize: "18px", fontWeight: 700, color: c.white, margin: 0 }}>{pool.playerCount}</p>
+                </div>
+                <div>
+                  <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 2px" }}>Entry</p>
+                  <p style={{ fontSize: "18px", fontWeight: 700, color: c.white, margin: 0 }}>
+                    {pool.feePerLife > 0 ? `$${(pool.feePerLife / 100).toFixed(2)}/life` : "Free"}
+                  </p>
+                </div>
+              </div>
+              <Link href="/pools" style={{
+                display: "block",
+                padding: "9px 16px",
+                borderRadius: "8px",
+                background: c.white,
+                color: c.green,
+                fontSize: "14px",
+                fontWeight: 600,
+                textDecoration: "none",
+                textAlign: "center",
+              }}>
+                Request to Join
+              </Link>
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -450,9 +538,7 @@ function Footer() {
   return (
     <footer style={{ backgroundColor: c.charcoal, padding: "60px 40px 32px" }}>
       <div style={{ maxWidth: "960px", margin: "0 auto" }}>
-        {/* Top row */}
         <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "40px", marginBottom: "48px" }}>
-          {/* Brand */}
           <div style={{ maxWidth: "260px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
               <LogoIcon size={28} />
@@ -466,7 +552,6 @@ function Footer() {
             </a>
           </div>
 
-          {/* Link columns */}
           <div style={{ display: "flex", gap: "60px", flexWrap: "wrap" }}>
             <div>
               <p style={{ fontSize: "12px", fontWeight: 700, color: c.white, textTransform: "uppercase", letterSpacing: "0.8px", margin: "0 0 14px" }}>
@@ -488,7 +573,6 @@ function Footer() {
           </div>
         </div>
 
-        {/* Bottom row */}
         <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
           <p style={{ fontSize: "13px", color: muted, margin: 0 }}>
             © {new Date().getFullYear()} Goat Pool. All rights reserved.
@@ -502,11 +586,12 @@ function Footer() {
   );
 }
 
-export default function HomeClient() {
+export default function HomeClient({ openPools }: { openPools: OpenPool[] }) {
   return (
     <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: "#2D2D2D", minHeight: "100vh" }}>
       <Nav />
-      <Hero />
+      <Hero hasOpenPools={openPools.length > 0} />
+      <OpenPoolsSection pools={openPools} />
       <HowItWorks />
       <ExamplePool />
       <Pricing />
