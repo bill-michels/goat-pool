@@ -433,3 +433,125 @@ export async function notifyPickReminder(roundId: string) {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Sofascore sync
+// ---------------------------------------------------------------------------
+
+const SF_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept": "application/json",
+  "Referer": "https://www.sofascore.com/",
+};
+
+async function fetchSofascorePages(tId: string, seasonId: string, pages = 4): Promise<any[]> {
+  const results = await Promise.allSettled(
+    Array.from({ length: pages }, (_, i) =>
+      fetch(
+        `https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${seasonId}/events/last/${i}`,
+        { headers: SF_HEADERS }
+      ).then(r => r.ok ? r.json() : null)
+    )
+  );
+  return results
+    .filter(r => r.status === "fulfilled" && (r as any).value?.events)
+    .flatMap(r => (r as any).value.events as any[]);
+}
+
+export async function fetchSofascoreRounds(
+  sofascoreTId: string,
+  sofascoreSeasonId: string
+): Promise<{ rounds: Array<{ name: string; count: number }>; error?: string }> {
+  try {
+    const events = await fetchSofascorePages(sofascoreTId, sofascoreSeasonId);
+    const finished = events.filter(e => e.status?.type === "finished");
+    const counts = new Map<string, number>();
+    for (const e of finished) {
+      const name = e.roundInfo?.name ?? "Unknown";
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    const rounds = Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+    return { rounds };
+  } catch (e: any) {
+    return { rounds: [], error: String(e.message ?? e) };
+  }
+}
+
+export async function syncRoundResultsFromSofascore(
+  roundId: string,
+  roundNumber: number,
+  tournamentId: string,
+  sofascoreTId: string,
+  sofascoreSeasonId: string,
+  sofascoreRoundName: string
+): Promise<{ synced: number; unmatched: string[]; skipped: number; error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { synced: 0, unmatched: [], skipped: 0, error: "Not authenticated." };
+
+  const admin = db();
+
+  try {
+    const events = await fetchSofascorePages(sofascoreTId, sofascoreSeasonId);
+    const targetEvents = events.filter(
+      e => e.status?.type === "finished" && e.roundInfo?.name === sofascoreRoundName
+    );
+
+    if (targetEvents.length === 0) {
+      return { synced: 0, unmatched: [], skipped: 0, error: `No completed matches found for "${sofascoreRoundName}". Try fetching rounds again.` };
+    }
+
+    const { data: athletes } = await admin
+      .from("athletes")
+      .select("id, name")
+      .eq("tournament_id", tournamentId);
+
+    const { data: existingResults } = await admin
+      .from("athlete_results")
+      .select("athlete_id")
+      .eq("round_id", roundId);
+    const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
+
+    const norm = (s: string) => s.toLowerCase().trim();
+    const last = (s: string) => norm(s).split(" ").slice(-1)[0];
+
+    const findAthlete = (sfName: string) => {
+      const n = norm(sfName);
+      const l = last(sfName);
+      return (athletes ?? []).find((a: any) => norm(a.name) === n)
+        ?? (athletes ?? []).find((a: any) => l.length > 3 && last(a.name) === l);
+    };
+
+    let synced = 0;
+    let skipped = 0;
+    const unmatched: string[] = [];
+
+    for (const event of targetEvents) {
+      const winnerName: string = event.winnerCode === 1 ? event.homeTeam?.name : event.awayTeam?.name;
+      const loserName: string = event.winnerCode === 1 ? event.awayTeam?.name : event.homeTeam?.name;
+      if (!winnerName || !loserName) continue;
+
+      for (const [sfName, result] of [[winnerName, "win"], [loserName, "loss"]] as const) {
+        const athlete = findAthlete(sfName);
+        if (!athlete) {
+          unmatched.push(sfName);
+          continue;
+        }
+        if (existingAthleteIds.has(athlete.id)) {
+          skipped++;
+          continue;
+        }
+        const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
+        if (!error) {
+          existingAthleteIds.add(athlete.id);
+          synced++;
+        }
+      }
+    }
+
+    return { synced, unmatched: Array.from(new Set(unmatched)), skipped };
+  } catch (e: any) {
+    return { synced: 0, unmatched: [], skipped: 0, error: String(e.message ?? e) };
+  }
+}
