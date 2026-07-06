@@ -435,6 +435,122 @@ export async function notifyPickReminder(roundId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Sofascore search + connection
+// ---------------------------------------------------------------------------
+
+export async function searchSofascoreTournaments(
+  query: string
+): Promise<{ results: Array<{ id: number; name: string; category: string }>; error?: string }> {
+  try {
+    const res = await fetch(
+      `https://api.sofascore.com/api/v1/search/all?q=${encodeURIComponent(query)}&page=0`,
+      { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
+    );
+    if (!res.ok) return { results: [], error: `Sofascore returned ${res.status}` };
+    const json = await res.json();
+    const results = (json.results ?? [])
+      .filter((r: any) => r.type === "uniqueTournament")
+      .map((r: any) => ({
+        id: r.entity.id as number,
+        name: r.entity.name as string,
+        category: (r.entity.category?.name ?? "") as string,
+      }))
+      .slice(0, 8);
+    return { results };
+  } catch (e: any) {
+    return { results: [], error: String(e.message ?? e) };
+  }
+}
+
+export async function fetchSofascoreSeasonsForTournament(
+  tournamentId: string
+): Promise<{ seasons: Array<{ id: number; name: string }>; error?: string }> {
+  try {
+    const res = await fetch(
+      `https://api.sofascore.com/api/v1/unique-tournament/${tournamentId}/seasons`,
+      { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
+    );
+    if (!res.ok) return { seasons: [], error: `Sofascore returned ${res.status}` };
+    const json = await res.json();
+    const seasons = (json.seasons ?? [])
+      .map((s: any) => ({ id: s.id as number, name: s.name as string }))
+      .slice(0, 10);
+    return { seasons };
+  } catch (e: any) {
+    return { seasons: [], error: String(e.message ?? e) };
+  }
+}
+
+export async function saveSofascoreConnection(
+  tournamentId: string,
+  sofascoreTId: string,
+  sofascoreSeasonId: string
+): Promise<{ error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { error: "Not authenticated." };
+  const admin = db();
+  const { error } = await admin
+    .from("tournaments")
+    .update({ sofascore_tournament_id: sofascoreTId, sofascore_season_id: sofascoreSeasonId })
+    .eq("id", tournamentId);
+  return error ? { error: error.message } : {};
+}
+
+export async function importAthletesFromSofascore(
+  tournamentId: string,
+  sofascoreTId: string,
+  sofascoreSeasonId: string
+): Promise<{ imported: number; error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { imported: 0, error: "Not authenticated." };
+  const admin = db();
+
+  try {
+    // Fetch enough pages to cover the whole draw
+    const events = await fetchSofascorePages(sofascoreTId, sofascoreSeasonId, 6);
+
+    // Collect unique players with seeds. Prefer the seed from the lowest-numbered round
+    // (earliest round = the round they were seeded into).
+    const playerMap = new Map<string, { name: string; seed: number }>();
+
+    for (const e of events) {
+      for (const [nameKey, seedKey] of [
+        ["homeTeam", "homeTeamSeed"],
+        ["awayTeam", "awayTeamSeed"],
+      ] as const) {
+        const name: string | undefined = e[nameKey]?.name;
+        if (!name) continue;
+        const sfSeed: string | undefined = e[seedKey];
+        const seed = sfSeed && /^\d+$/.test(sfSeed) ? parseInt(sfSeed) : 999;
+        if (!playerMap.has(name) || seed < playerMap.get(name)!.seed) {
+          playerMap.set(name, { name, seed });
+        }
+      }
+    }
+
+    if (playerMap.size === 0) {
+      return { imported: 0, error: "No players found. Check tournament/season IDs." };
+    }
+
+    const payload = Array.from(playerMap.values()).map(p => ({
+      tournament_id: tournamentId,
+      name: p.name,
+      seed: p.seed,
+      has_bye: false,
+      status: "active",
+    }));
+
+    const { error } = await admin
+      .from("athletes")
+      .upsert(payload, { onConflict: "tournament_id,name" });
+
+    return error ? { imported: 0, error: error.message } : { imported: payload.length };
+  } catch (e: any) {
+    return { imported: 0, error: String(e.message ?? e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Sofascore sync
 // ---------------------------------------------------------------------------
 

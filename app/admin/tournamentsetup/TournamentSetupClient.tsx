@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools, fetchSofascoreRounds, syncRoundResultsFromSofascore } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools, fetchSofascoreRounds, syncRoundResultsFromSofascore, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -405,6 +405,8 @@ function AddAthletes({
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
 
   const parseBulk = () => {
     setError(null);
@@ -528,6 +530,42 @@ function AddAthletes({
       {error && (
         <div style={{ padding: "12px 14px", borderRadius: "10px", backgroundColor: c.redMuted, border: `1px solid #FECACA`, color: c.red, fontSize: "14px", marginBottom: "20px" }}>
           {error}
+        </div>
+      )}
+
+      {/* Import from Sofascore */}
+      {tournament.sofascore_tournament_id && tournament.sofascore_season_id && (
+        <div style={{ backgroundColor: c.greenMuted, borderRadius: "12px", padding: "16px 20px", border: `1px solid ${c.green}20`, marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+          <div>
+            <p style={{ fontSize: "13px", fontWeight: 700, color: c.green, margin: "0 0 2px" }}>Import draw from Sofascore</p>
+            <p style={{ fontSize: "12px", color: c.green, margin: 0, opacity: 0.8 }}>
+              Auto-fills all athletes with seeds. Connected to tournament ID {tournament.sofascore_tournament_id}.
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+            {importResult && <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>{importResult}</span>}
+            <button
+              onClick={async () => {
+                setImporting(true);
+                setImportResult(null);
+                const res = await importAthletesFromSofascore(tournament.id, tournament.sofascore_tournament_id, tournament.sofascore_season_id);
+                if (res.error) setError(res.error);
+                else {
+                  setImportResult(`✓ ${res.imported} athletes imported`);
+                  // Refresh athlete list from DB
+                  const { data } = await supabase.from("athletes").select("*").eq("tournament_id", tournament.id).order("seed");
+                  if (data) {
+                    setAthletes(data.map((a: any) => ({ ...a, _key: a.id })));
+                  }
+                }
+                setImporting(false);
+              }}
+              disabled={importing}
+              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: c.green, color: c.white, fontSize: "13px", fontWeight: 600, cursor: importing ? "not-allowed" : "pointer" }}
+            >
+              {importing ? "Importing…" : "Import Athletes"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -701,10 +739,22 @@ function ManageTournament({
   const [completingRound, setCompletingRound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Sofascore connection state
+  const [sfConnectOpen, setSfConnectOpen] = useState(false);
+  const [sfSearch, setSfSearch] = useState("");
+  const [sfSearchResults, setSfSearchResults] = useState<Array<{ id: number; name: string; category: string }>>([]);
+  const [sfSearching, setSfSearching] = useState(false);
+  const [sfSelectedTId, setSfSelectedTId] = useState<string>(tournament.sofascore_tournament_id ?? "");
+  const [sfSeasons, setSfSeasons] = useState<Array<{ id: number; name: string }>>([]);
+  const [sfSelectedSeasonId, setSfSelectedSeasonId] = useState<string>(tournament.sofascore_season_id ?? "");
+  const [sfSavingConn, setSfSavingConn] = useState(false);
+  const [sfConnError, setSfConnError] = useState<string | null>(null);
+  const [sfConnSaved, setSfConnSaved] = useState(false);
+
   // Sofascore sync state
   const [sfOpen, setSfOpen] = useState(false);
-  const [sfTId, setSfTId] = useState("");
-  const [sfSeasonId, setSfSeasonId] = useState("");
+  const [sfTId, setSfTId] = useState(tournament.sofascore_tournament_id ?? "");
+  const [sfSeasonId, setSfSeasonId] = useState(tournament.sofascore_season_id ?? "");
   const [sfRounds, setSfRounds] = useState<Array<{ name: string; count: number }>>([]);
   const [sfRoundName, setSfRoundName] = useState("");
   const [sfFetching, setSfFetching] = useState(false);
@@ -892,6 +942,140 @@ function ManageTournament({
           {error || deleteError}
         </div>
       )}
+
+      {/* Sofascore Connection */}
+      <div style={{ backgroundColor: c.white, borderRadius: "12px", padding: "14px 20px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal }}>Sofascore</span>
+            {tournament.sofascore_tournament_id ? (
+              <span style={{ fontSize: "12px", padding: "3px 8px", borderRadius: "6px", backgroundColor: c.greenMuted, color: c.green, fontWeight: 600 }}>
+                Connected — ID {tournament.sofascore_tournament_id} / Season {tournament.sofascore_season_id}
+              </span>
+            ) : (
+              <span style={{ fontSize: "12px", color: c.gray }}>Not connected — connect to enable auto-sync</span>
+            )}
+          </div>
+          <button
+            onClick={() => { setSfConnectOpen(o => !o); setSfConnError(null); setSfConnSaved(false); }}
+            style={{ padding: "5px 12px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, background: c.white, color: c.charcoal, fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
+          >
+            {sfConnectOpen ? "Close" : tournament.sofascore_tournament_id ? "Update" : "Connect"}
+          </button>
+        </div>
+
+        {sfConnectOpen && (
+          <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: `1px solid ${c.grayLight}` }}>
+            {/* Search */}
+            <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+              <input
+                value={sfSearch}
+                onChange={e => setSfSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") e.currentTarget.form?.requestSubmit?.(); }}
+                placeholder="Search tournament name (e.g. Wimbledon)"
+                style={{ flex: 1, padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px" }}
+              />
+              <button
+                onClick={async () => {
+                  if (!sfSearch.trim()) return;
+                  setSfSearching(true);
+                  const res = await searchSofascoreTournaments(sfSearch.trim());
+                  setSfSearchResults(res.results);
+                  if (res.error) setSfConnError(res.error);
+                  setSfSearching(false);
+                }}
+                disabled={sfSearching}
+                style={{ padding: "7px 14px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, background: c.white, color: c.charcoal, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+              >
+                {sfSearching ? "Searching…" : "Search"}
+              </button>
+            </div>
+
+            {/* Search results */}
+            {sfSearchResults.length > 0 && (
+              <div style={{ marginBottom: "10px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                {sfSearchResults.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={async () => {
+                      setSfSelectedTId(String(r.id));
+                      setSfSeasons([]);
+                      setSfSelectedSeasonId("");
+                      const res = await fetchSofascoreSeasonsForTournament(String(r.id));
+                      if (res.seasons.length) setSfSeasons(res.seasons);
+                      if (res.error) setSfConnError(res.error);
+                    }}
+                    style={{
+                      textAlign: "left", padding: "8px 12px", borderRadius: "7px",
+                      border: `1px solid ${sfSelectedTId === String(r.id) ? c.green : c.grayLight}`,
+                      background: sfSelectedTId === String(r.id) ? c.greenMuted : c.white,
+                      color: c.charcoal, fontSize: "13px", cursor: "pointer",
+                    }}
+                  >
+                    <strong>{r.name}</strong>
+                    {r.category ? <span style={{ color: c.gray, marginLeft: "8px" }}>{r.category}</span> : null}
+                    <span style={{ color: c.gray, marginLeft: "8px", fontSize: "12px" }}>ID: {r.id}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Season select */}
+            {sfSeasons.length > 0 && (
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "10px" }}>
+                <label style={{ fontSize: "13px", fontWeight: 600, color: c.gray, whiteSpace: "nowrap" }}>Season:</label>
+                <select
+                  value={sfSelectedSeasonId}
+                  onChange={e => setSfSelectedSeasonId(e.target.value)}
+                  style={{ padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", flex: 1 }}
+                >
+                  <option value="">— select season —</option>
+                  {sfSeasons.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
+
+            {/* Manual entry fallback */}
+            <details style={{ marginBottom: "10px" }}>
+              <summary style={{ fontSize: "12px", color: c.gray, cursor: "pointer" }}>Enter IDs manually</summary>
+              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                <input value={sfSelectedTId} onChange={e => setSfSelectedTId(e.target.value)} placeholder="Tournament ID" style={{ padding: "6px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", width: "120px" }} />
+                <input value={sfSelectedSeasonId} onChange={e => setSfSelectedSeasonId(e.target.value)} placeholder="Season ID" style={{ padding: "6px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", width: "120px" }} />
+              </div>
+            </details>
+
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <button
+                onClick={async () => {
+                  if (!sfSelectedTId || !sfSelectedSeasonId) return;
+                  setSfSavingConn(true);
+                  setSfConnError(null);
+                  const res = await saveSofascoreConnection(tournament.id, sfSelectedTId, sfSelectedSeasonId);
+                  if (res.error) setSfConnError(res.error);
+                  else {
+                    setSfConnSaved(true);
+                    setSfTId(sfSelectedTId);
+                    setSfSeasonId(sfSelectedSeasonId);
+                    router.refresh();
+                  }
+                  setSfSavingConn(false);
+                }}
+                disabled={sfSavingConn || !sfSelectedTId || !sfSelectedSeasonId}
+                style={{
+                  padding: "7px 16px", borderRadius: "7px", border: "none",
+                  background: sfSelectedTId && sfSelectedSeasonId ? c.green : c.grayLight,
+                  color: sfSelectedTId && sfSelectedSeasonId ? c.white : c.gray,
+                  fontSize: "13px", fontWeight: 600, cursor: sfSelectedTId && sfSelectedSeasonId ? "pointer" : "not-allowed",
+                }}
+              >
+                {sfSavingConn ? "Saving…" : "Save Connection"}
+              </button>
+              {sfConnSaved && <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>✓ Saved</span>}
+              {sfConnError && <span style={{ fontSize: "13px", color: "#EF4444" }}>{sfConnError}</span>}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Round Tabs */}
       <div style={{ display: "flex", gap: "6px", marginBottom: "28px" }}>
