@@ -68,14 +68,6 @@ export default function PoolViewClient({
     ? (activeRound.hasPick ? "Change Pick" : "Place Pick")
     : null;
 
-  const selectedRoundData = selectedRound ? rounds.find(r => r.id === selectedRound) : null;
-  const selectedPicks = selectedRound
-    ? players.map(p => ({
-        username: p.username,
-        pick: p.completedPicks[rounds.filter(r => r.status === "completed" || r.status === "locked").findIndex(r => r.id === selectedRound)] ?? null,
-      })).filter(p => p.pick)
-    : [];
-
   return (
     <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: c.charcoal, minHeight: "100vh", backgroundColor: c.cream }}>
       <PlayerNav username={username} isCommissioner={isCommissioner} />

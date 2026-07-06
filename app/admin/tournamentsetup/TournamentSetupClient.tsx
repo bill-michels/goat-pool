@@ -850,14 +850,6 @@ function ManageTournament({
   // Local copy of deadlines so saves reflect immediately without a full refresh
   const [deadlineOverrides, setDeadlineOverrides] = useState<Record<string, string | null>>({});
 
-  // Map of athleteId → round they were eliminated in (from DB + current session)
-  const [eliminatedInRound, setEliminatedInRound] = useState<Map<string, number>>(() => {
-    const m = new Map<string, number>();
-    athletes.forEach((a) => {
-      if (a.status === "eliminated" && a.eliminated_in_round) m.set(a.id!, a.eliminated_in_round);
-    });
-    return m;
-  });
 
   const activeRoundData = (() => {
     const r = rounds.find((r) => r.round_number === activeRound);
@@ -941,12 +933,6 @@ function ManageTournament({
     );
 
     if (resErr) { setError(resErr); setSavingId(null); return; }
-
-    if (result === "loss") {
-      setEliminatedInRound((prev) => { const m = new Map(prev); m.set(athleteId, activeRound); return m; });
-    } else {
-      setEliminatedInRound((prev) => { const m = new Map(prev); m.delete(athleteId); return m; });
-    }
 
     // Commit locally
     const newSaved = { ...savedResults, [athleteId]: result };
@@ -1394,7 +1380,7 @@ function ManageTournament({
                 <div style={{ fontSize: "13px" }}>
                   <span style={{ color: c.green, fontWeight: 600 }}>✓ {sfResult.synced} results synced</span>
                   {sfResult.sofascoreRoundName && (
-                    <span style={{ color: c.gray, marginLeft: "10px" }}>"{sfResult.sofascoreRoundName}"</span>
+                    <span style={{ color: c.gray, marginLeft: "10px" }}>&ldquo;{sfResult.sofascoreRoundName}&rdquo;</span>
                   )}
                   {sfResult.skipped > 0 && <span style={{ color: c.gray, marginLeft: "10px" }}>{sfResult.skipped} already recorded</span>}
                   {sfResult.unmatched.length > 0 && (
@@ -1473,7 +1459,6 @@ function ManageTournament({
               setSavedResults((prev) => { const n = { ...prev }; delete n[a.id!]; return n; });
               setPending((prev) => { const n = { ...prev }; delete n[a.id!]; return n; });
               setEditingResultIds((prev) => { const s = new Set(prev); s.delete(a.id!); return s; });
-              setEliminatedInRound((prev) => { const m = new Map(prev); m.delete(a.id!); return m; });
               setUndoingId(null);
             };
 
