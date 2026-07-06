@@ -133,6 +133,14 @@ function CreateTournament({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Sofascore connection (saved alongside tournament)
+  const [sfSearch, setSfSearch] = useState("");
+  const [sfSearchResults, setSfSearchResults] = useState<Array<{ id: number; name: string; category: string }>>([]);
+  const [sfSearching, setSfSearching] = useState(false);
+  const [sfTId, setSfTId] = useState(initialTournament?.sofascore_tournament_id ?? "");
+  const [sfSeasons, setSfSeasons] = useState<Array<{ id: number; name: string }>>([]);
+  const [sfSeasonId, setSfSeasonId] = useState(initialTournament?.sofascore_season_id ?? "");
+
   const roundCount = Math.min(Math.max(parseInt(numRounds) || 0, 1), 10);
 
   const setInput = (roundNum: number, field: "date" | "time", val: string) => {
@@ -166,10 +174,15 @@ function CreateTournament({
 
     let tournament = initialTournament;
 
+    const sfFields = {
+      sofascore_tournament_id: sfTId || null,
+      sofascore_season_id: sfSeasonId || null,
+    };
+
     if (!tournament) {
       const { data, error: tErr } = await supabase
         .from("tournaments")
-        .insert({ name: name.trim(), num_rounds: roundCount, status: "upcoming", created_by: userId })
+        .insert({ name: name.trim(), num_rounds: roundCount, status: "upcoming", created_by: userId, ...sfFields })
         .select()
         .single();
       if (tErr) {
@@ -182,10 +195,10 @@ function CreateTournament({
     } else {
       const { error: uErr } = await supabase
         .from("tournaments")
-        .update({ name: name.trim(), num_rounds: roundCount })
+        .update({ name: name.trim(), num_rounds: roundCount, ...sfFields })
         .eq("id", tournament.id);
       if (uErr) { setError(uErr.message); setLoading(false); return; }
-      tournament = { ...tournament, name: name.trim(), num_rounds: roundCount };
+      tournament = { ...tournament, name: name.trim(), num_rounds: roundCount, ...sfFields };
     }
 
     const roundsPayload = Array.from({ length: roundCount }, (_, i) => ({
@@ -357,6 +370,82 @@ function CreateTournament({
               );
             })}
           </div>
+        </div>
+
+        {/* Sofascore Connection */}
+        <div style={{ backgroundColor: c.white, borderRadius: "14px", padding: "20px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
+          <p style={{ fontSize: "14px", fontWeight: 700, color: c.charcoal, margin: "0 0 4px" }}>
+            Connect to Sofascore <span style={{ fontWeight: 400, color: c.gray }}>(optional)</span>
+          </p>
+          <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 14px" }}>
+            Enables auto-syncing match results and importing the athlete draw.
+          </p>
+
+          {sfTId && sfSeasonId ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+              <span style={{ padding: "4px 10px", borderRadius: "6px", backgroundColor: c.greenMuted, color: c.green, fontSize: "12px", fontWeight: 600 }}>
+                Connected — ID {sfTId} / Season {sfSeasonId}
+              </span>
+              <button onClick={() => { setSfTId(""); setSfSeasonId(""); setSfSearchResults([]); }}
+                style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                Remove
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                <input
+                  value={sfSearch}
+                  onChange={e => setSfSearch(e.target.value)}
+                  placeholder="Search by name, e.g. Wimbledon"
+                  style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, fontSize: "14px" }}
+                />
+                <button
+                  onClick={async () => {
+                    if (!sfSearch.trim()) return;
+                    setSfSearching(true);
+                    const res = await searchSofascoreTournaments(sfSearch.trim());
+                    setSfSearchResults(res.results);
+                    setSfSearching(false);
+                  }}
+                  disabled={sfSearching}
+                  style={{ padding: "8px 16px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, background: c.white, color: c.charcoal, fontSize: "14px", fontWeight: 600, cursor: "pointer" }}
+                >
+                  {sfSearching ? "Searching…" : "Search"}
+                </button>
+              </div>
+
+              {sfSearchResults.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "10px" }}>
+                  {sfSearchResults.map(r => (
+                    <button key={r.id} onClick={async () => {
+                      setSfTId(String(r.id));
+                      setSfSeasons([]);
+                      setSfSeasonId("");
+                      const res = await fetchSofascoreSeasonsForTournament(String(r.id));
+                      if (res.seasons.length) setSfSeasons(res.seasons);
+                    }} style={{
+                      textAlign: "left", padding: "8px 12px", borderRadius: "8px",
+                      border: `1.5px solid ${sfTId === String(r.id) ? c.green : c.grayLight}`,
+                      background: sfTId === String(r.id) ? c.greenMuted : c.white,
+                      color: c.charcoal, fontSize: "13px", cursor: "pointer",
+                    }}>
+                      <strong>{r.name}</strong>
+                      {r.category && <span style={{ color: c.gray, marginLeft: "8px" }}>{r.category}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {sfSeasons.length > 0 && (
+                <select value={sfSeasonId} onChange={e => setSfSeasonId(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, fontSize: "14px" }}>
+                  <option value="">— select season / year —</option>
+                  {sfSeasons.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                </select>
+              )}
+            </>
+          )}
         </div>
 
         <button
@@ -948,9 +1037,9 @@ function ManageTournament({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal }}>Sofascore</span>
-            {tournament.sofascore_tournament_id ? (
+            {(sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id) ? (
               <span style={{ fontSize: "12px", padding: "3px 8px", borderRadius: "6px", backgroundColor: c.greenMuted, color: c.green, fontWeight: 600 }}>
-                Connected — ID {tournament.sofascore_tournament_id} / Season {tournament.sofascore_season_id}
+                Connected — ID {sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id} / Season {sfConnSaved ? sfSelectedSeasonId : tournament.sofascore_season_id}
               </span>
             ) : (
               <span style={{ fontSize: "12px", color: c.gray }}>Not connected — connect to enable auto-sync</span>
@@ -960,7 +1049,7 @@ function ManageTournament({
             onClick={() => { setSfConnectOpen(o => !o); setSfConnError(null); setSfConnSaved(false); }}
             style={{ padding: "5px 12px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, background: c.white, color: c.charcoal, fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
           >
-            {sfConnectOpen ? "Close" : tournament.sofascore_tournament_id ? "Update" : "Connect"}
+            {sfConnectOpen ? "Close" : (sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id) ? "Update" : "Connect"}
           </button>
         </div>
 
