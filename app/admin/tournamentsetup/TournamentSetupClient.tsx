@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools, fetchSofascoreRounds, syncRoundResultsFromSofascore, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools, syncRoundAuto, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -841,14 +841,8 @@ function ManageTournament({
   const [sfConnSaved, setSfConnSaved] = useState(false);
 
   // Sofascore sync state
-  const [sfOpen, setSfOpen] = useState(false);
-  const [sfTId, setSfTId] = useState(tournament.sofascore_tournament_id ?? "");
-  const [sfSeasonId, setSfSeasonId] = useState(tournament.sofascore_season_id ?? "");
-  const [sfRounds, setSfRounds] = useState<Array<{ name: string; count: number }>>([]);
-  const [sfRoundName, setSfRoundName] = useState("");
-  const [sfFetching, setSfFetching] = useState(false);
   const [sfSyncing, setSfSyncing] = useState(false);
-  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number } | null>(null);
+  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number; sofascoreRoundName?: string } | null>(null);
   const [sfError, setSfError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
@@ -890,6 +884,8 @@ function ManageTournament({
     setPrevRoundResults({});
     setPending({});
     setEditingResultIds(new Set());
+    setSfResult(null);
+    setSfError(null);
 
     const prevRoundData = rounds.find((r) => r.round_number === activeRound - 1);
 
@@ -1143,8 +1139,6 @@ function ManageTournament({
                   if (res.error) setSfConnError(res.error);
                   else {
                     setSfConnSaved(true);
-                    setSfTId(sfSelectedTId);
-                    setSfSeasonId(sfSelectedSeasonId);
                     router.refresh();
                   }
                   setSfSavingConn(false);
@@ -1381,137 +1375,62 @@ function ManageTournament({
           </div>
         </div>
 
-        {/* Sofascore sync panel — only shown when round is active */}
-        {activeRoundData?.status === "active" && (
-          <div style={{ marginBottom: "16px" }}>
+        {/* Sofascore sync — shown for all rounds when tournament is connected */}
+        {(sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id) && (
+          <div style={{
+            backgroundColor: c.white, borderRadius: "14px", padding: "18px 22px",
+            border: `1px solid ${c.grayLight}`, marginBottom: "20px",
+            display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexWrap: "wrap",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: "14px", fontWeight: 700, color: c.charcoal, margin: "0 0 2px" }}>Sofascore Sync</p>
+              <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 10px" }}>
+                Pull Round {activeRound} results directly from Sofascore.
+              </p>
+              {sfError && (
+                <p style={{ fontSize: "13px", color: "#EF4444", margin: "0" }}>{sfError}</p>
+              )}
+              {sfResult && (
+                <div style={{ fontSize: "13px" }}>
+                  <span style={{ color: c.green, fontWeight: 600 }}>✓ {sfResult.synced} results synced</span>
+                  {sfResult.sofascoreRoundName && (
+                    <span style={{ color: c.gray, marginLeft: "10px" }}>"{sfResult.sofascoreRoundName}"</span>
+                  )}
+                  {sfResult.skipped > 0 && <span style={{ color: c.gray, marginLeft: "10px" }}>{sfResult.skipped} already recorded</span>}
+                  {sfResult.unmatched.length > 0 && (
+                    <div style={{ marginTop: "6px", color: "#D97706" }}>
+                      ⚠ Unmatched ({sfResult.unmatched.length}): {sfResult.unmatched.join(", ")}
+                      <span style={{ color: c.gray, marginLeft: "6px" }}>— check athlete name spelling</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <button
-              onClick={() => { setSfOpen(o => !o); setSfResult(null); setSfError(null); }}
+              onClick={async () => {
+                if (!activeRoundData) return;
+                setSfSyncing(true);
+                setSfError(null);
+                setSfResult(null);
+                const tId = sfConnSaved ? sfSelectedTId : (tournament.sofascore_tournament_id ?? "");
+                const sId = sfConnSaved ? sfSelectedSeasonId : (tournament.sofascore_season_id ?? "");
+                const res = await syncRoundAuto(activeRoundData.id, activeRound, tournament.id, tId, sId);
+                if (res.error) setSfError(res.error);
+                else { setSfResult(res); if (res.synced > 0) router.refresh(); }
+                setSfSyncing(false);
+              }}
+              disabled={sfSyncing}
               style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                border: `1px solid ${c.grayLight}`, background: sfOpen ? c.grayLighter : c.white,
-                color: c.charcoal, cursor: "pointer",
+                padding: "8px 18px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
+                border: `1px solid ${sfSyncing ? c.grayLight : c.green}`,
+                background: sfSyncing ? c.white : c.green,
+                color: sfSyncing ? c.gray : c.white,
+                cursor: sfSyncing ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap", flexShrink: 0,
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M12 4v16M4 12h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-              Sync from Sofascore
+              {sfSyncing ? "Syncing…" : `Sync Round ${activeRound} Results`}
             </button>
-
-            {sfOpen && (
-              <div style={{ marginTop: "12px", padding: "18px 20px", borderRadius: "10px", border: `1px solid ${c.grayLight}`, backgroundColor: c.grayLighter }}>
-                <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 14px" }}>
-                  Enter the Sofascore tournament and season IDs, then fetch the available completed rounds to sync.
-                  For Wimbledon 2026: Tournament ID <strong>2361</strong>, Season ID <strong>85943</strong>.
-                </p>
-
-                <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", marginBottom: "12px", flexWrap: "wrap" }}>
-                  <div>
-                    <label style={{ fontSize: "12px", fontWeight: 600, color: c.gray, display: "block", marginBottom: "4px" }}>Tournament ID</label>
-                    <input
-                      value={sfTId}
-                      onChange={e => setSfTId(e.target.value)}
-                      placeholder="e.g. 2361"
-                      style={{ padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", width: "110px" }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "12px", fontWeight: 600, color: c.gray, display: "block", marginBottom: "4px" }}>Season ID</label>
-                    <input
-                      value={sfSeasonId}
-                      onChange={e => setSfSeasonId(e.target.value)}
-                      placeholder="e.g. 85943"
-                      style={{ padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", width: "110px" }}
-                    />
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (!sfTId || !sfSeasonId) return;
-                      setSfFetching(true);
-                      setSfError(null);
-                      setSfRounds([]);
-                      setSfRoundName("");
-                      const res = await fetchSofascoreRounds(sfTId, sfSeasonId);
-                      if (res.error) setSfError(res.error);
-                      else setSfRounds(res.rounds);
-                      setSfFetching(false);
-                    }}
-                    disabled={sfFetching || !sfTId || !sfSeasonId}
-                    style={{
-                      padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                      border: `1px solid ${c.grayLight}`, background: c.white, color: c.charcoal,
-                      cursor: sfFetching || !sfTId || !sfSeasonId ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {sfFetching ? "Fetching…" : "Fetch Rounds"}
-                  </button>
-                </div>
-
-                {sfRounds.length > 0 && (
-                  <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", marginBottom: "12px", flexWrap: "wrap" }}>
-                    <div>
-                      <label style={{ fontSize: "12px", fontWeight: 600, color: c.gray, display: "block", marginBottom: "4px" }}>Round to Sync</label>
-                      <select
-                        value={sfRoundName}
-                        onChange={e => setSfRoundName(e.target.value)}
-                        style={{ padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", minWidth: "200px" }}
-                      >
-                        <option value="">— select —</option>
-                        {sfRounds.map(r => (
-                          <option key={r.name} value={r.name}>{r.name} ({r.count} matches)</option>
-                        ))}
-                      </select>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        if (!sfRoundName || !activeRoundData) return;
-                        setSfSyncing(true);
-                        setSfError(null);
-                        setSfResult(null);
-                        const res = await syncRoundResultsFromSofascore(
-                          activeRoundData.id,
-                          activeRound,
-                          tournament.id,
-                          sfTId,
-                          sfSeasonId,
-                          sfRoundName
-                        );
-                        if (res.error) setSfError(res.error);
-                        else { setSfResult(res); if (res.synced > 0) router.refresh(); }
-                        setSfSyncing(false);
-                      }}
-                      disabled={sfSyncing || !sfRoundName}
-                      style={{
-                        padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                        border: `1px solid ${sfRoundName ? c.green : c.grayLight}`,
-                        background: sfRoundName ? c.green : c.white,
-                        color: sfRoundName ? c.white : c.gray,
-                        cursor: sfSyncing || !sfRoundName ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      {sfSyncing ? "Syncing…" : "Sync Results"}
-                    </button>
-                  </div>
-                )}
-
-                {sfError && (
-                  <p style={{ fontSize: "13px", color: "#EF4444", margin: "8px 0 0" }}>{sfError}</p>
-                )}
-                {sfResult && (
-                  <div style={{ marginTop: "8px", fontSize: "13px", color: c.charcoal }}>
-                    <span style={{ color: c.green, fontWeight: 600 }}>✓ {sfResult.synced} results synced</span>
-                    {sfResult.skipped > 0 && <span style={{ color: c.gray, marginLeft: "12px" }}>{sfResult.skipped} already recorded</span>}
-                    {sfResult.unmatched.length > 0 && (
-                      <div style={{ marginTop: "6px", color: "#D97706" }}>
-                        ⚠ Unmatched ({sfResult.unmatched.length}): {sfResult.unmatched.join(", ")}
-                        <span style={{ color: c.gray, marginLeft: "6px" }}>— check athlete name spelling</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 

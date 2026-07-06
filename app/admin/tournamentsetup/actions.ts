@@ -671,3 +671,27 @@ export async function syncRoundResultsFromSofascore(
     return { synced: 0, unmatched: [], skipped: 0, error: String(e.message ?? e) };
   }
 }
+
+export async function syncRoundAuto(
+  roundId: string,
+  roundNumber: number,
+  tournamentId: string,
+  sofascoreTId: string,
+  sofascoreSeasonId: string
+): Promise<{ synced: number; unmatched: string[]; skipped: number; sofascoreRoundName?: string; error?: string }> {
+  const { rounds, error: fetchErr } = await fetchSofascoreRounds(sofascoreTId, sofascoreSeasonId);
+  if (fetchErr) return { synced: 0, unmatched: [], skipped: 0, error: fetchErr };
+  if (!rounds.length) return { synced: 0, unmatched: [], skipped: 0, error: "No completed rounds found on Sofascore yet." };
+
+  // Rounds sorted by match count desc = earliest round first (64 → 32 → 16 → …)
+  const sorted = [...rounds].sort((a, b) => b.count - a.count);
+  const target = sorted[roundNumber - 1];
+  if (!target) {
+    return { synced: 0, unmatched: [], skipped: 0, error: `Round ${roundNumber} results not yet available on Sofascore.` };
+  }
+
+  const res = await syncRoundResultsFromSofascore(
+    roundId, roundNumber, tournamentId, sofascoreTId, sofascoreSeasonId, target.name
+  );
+  return { ...res, sofascoreRoundName: target.name };
+}
