@@ -25,9 +25,9 @@ async function fetchSofascoreEvents(tId: string, seasonId: string): Promise<any[
     )
   );
   return results
-    .filter(r => r.status === "fulfilled" && (r as any).value?.events)
+    .filter(r => r.status === "fulfilled" && Array.isArray((r as any).value?.events))
     .flatMap(r => (r as any).value.events as any[])
-    .filter(e => e.status?.type === "finished");
+    .filter(e => e.winnerCode === 1 || e.winnerCode === 2);
 }
 
 async function syncTournament(

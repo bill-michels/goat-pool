@@ -560,7 +560,7 @@ const SF_HEADERS = {
   "Referer": "https://www.sofascore.com/",
 };
 
-async function fetchSofascorePages(tId: string, seasonId: string, pages = 4): Promise<any[]> {
+async function fetchSofascorePages(tId: string, seasonId: string, pages = 8): Promise<any[]> {
   const results = await Promise.allSettled(
     Array.from({ length: pages }, (_, i) =>
       fetch(
@@ -570,28 +570,30 @@ async function fetchSofascorePages(tId: string, seasonId: string, pages = 4): Pr
     )
   );
   return results
-    .filter(r => r.status === "fulfilled" && (r as any).value?.events)
+    .filter(r => r.status === "fulfilled" && Array.isArray((r as any).value?.events))
     .flatMap(r => (r as any).value.events as any[]);
 }
 
 export async function fetchSofascoreRounds(
   sofascoreTId: string,
   sofascoreSeasonId: string
-): Promise<{ rounds: Array<{ name: string; count: number }>; error?: string }> {
+): Promise<{ rounds: Array<{ name: string; count: number }>; total: number; statuses: string[]; error?: string }> {
   try {
     const events = await fetchSofascorePages(sofascoreTId, sofascoreSeasonId);
-    const finished = events.filter(e => e.status?.type === "finished");
+    // Use winnerCode as the "match decided" signal — more reliable than status.type across all match endings
+    const decided = events.filter(e => e.winnerCode === 1 || e.winnerCode === 2);
+    const statuses = Array.from(new Set(events.map(e => e.status?.type ?? "unknown")));
     const counts = new Map<string, number>();
-    for (const e of finished) {
+    for (const e of decided) {
       const name = e.roundInfo?.name ?? "Unknown";
       counts.set(name, (counts.get(name) ?? 0) + 1);
     }
     const rounds = Array.from(counts.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
-    return { rounds };
+    return { rounds, total: events.length, statuses };
   } catch (e: any) {
-    return { rounds: [], error: String(e.message ?? e) };
+    return { rounds: [], total: 0, statuses: [], error: String(e.message ?? e) };
   }
 }
 
@@ -611,11 +613,11 @@ export async function syncRoundResultsFromSofascore(
   try {
     const events = await fetchSofascorePages(sofascoreTId, sofascoreSeasonId);
     const targetEvents = events.filter(
-      e => e.status?.type === "finished" && e.roundInfo?.name === sofascoreRoundName
+      e => (e.winnerCode === 1 || e.winnerCode === 2) && e.roundInfo?.name === sofascoreRoundName
     );
 
     if (targetEvents.length === 0) {
-      return { synced: 0, unmatched: [], skipped: 0, error: `No completed matches found for "${sofascoreRoundName}". Try fetching rounds again.` };
+      return { synced: 0, unmatched: [], skipped: 0, error: `No decided matches found for "${sofascoreRoundName}".` };
     }
 
     const { data: athletes } = await admin
@@ -679,9 +681,14 @@ export async function syncRoundAuto(
   sofascoreTId: string,
   sofascoreSeasonId: string
 ): Promise<{ synced: number; unmatched: string[]; skipped: number; sofascoreRoundName?: string; error?: string }> {
-  const { rounds, error: fetchErr } = await fetchSofascoreRounds(sofascoreTId, sofascoreSeasonId);
+  const { rounds, total, statuses, error: fetchErr } = await fetchSofascoreRounds(sofascoreTId, sofascoreSeasonId);
   if (fetchErr) return { synced: 0, unmatched: [], skipped: 0, error: fetchErr };
-  if (!rounds.length) return { synced: 0, unmatched: [], skipped: 0, error: "No completed rounds found on Sofascore yet." };
+  if (!rounds.length) {
+    const detail = total === 0
+      ? "Sofascore returned 0 events — the request may be blocked or the IDs are wrong."
+      : `Fetched ${total} events but none had a winner yet (statuses seen: ${statuses.join(", ")}).`;
+    return { synced: 0, unmatched: [], skipped: 0, error: detail };
+  }
 
   // Rounds sorted by match count desc = earliest round first (64 → 32 → 16 → …)
   const sorted = [...rounds].sort((a, b) => b.count - a.count);
