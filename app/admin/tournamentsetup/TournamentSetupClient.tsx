@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools, syncRoundAuto, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools, processSofascoreEvents, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -1400,7 +1400,34 @@ function ManageTournament({
                 setSfResult(null);
                 const tId = sfConnSaved ? sfSelectedTId : (tournament.sofascore_tournament_id ?? "");
                 const sId = sfConnSaved ? sfSelectedSeasonId : (tournament.sofascore_season_id ?? "");
-                const res = await syncRoundAuto(activeRoundData.id, activeRound, tournament.id, tId, sId);
+
+                // Fetch from Sofascore in the browser — bypasses server-side IP blocking
+                const allEvents: any[] = [];
+                try {
+                  const fetches = await Promise.allSettled(
+                    Array.from({ length: 8 }, (_, i) =>
+                      fetch(`https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${sId}/events/last/${i}`)
+                        .then(r => r.ok ? r.json() : null)
+                    )
+                  );
+                  for (const r of fetches) {
+                    if (r.status === "fulfilled" && Array.isArray(r.value?.events)) {
+                      allEvents.push(...r.value.events);
+                    }
+                  }
+                } catch {
+                  setSfError("Could not reach Sofascore from your browser.");
+                  setSfSyncing(false);
+                  return;
+                }
+
+                if (!allEvents.length) {
+                  setSfError("Sofascore returned no events. Check your tournament and season IDs.");
+                  setSfSyncing(false);
+                  return;
+                }
+
+                const res = await processSofascoreEvents(activeRoundData.id, activeRound, tournament.id, allEvents);
                 if (res.error) setSfError(res.error);
                 else { setSfResult(res); if (res.synced > 0) router.refresh(); }
                 setSfSyncing(false);

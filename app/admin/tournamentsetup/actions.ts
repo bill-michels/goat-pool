@@ -702,3 +702,72 @@ export async function syncRoundAuto(
   );
   return { ...res, sofascoreRoundName: target.name };
 }
+
+// Takes events already fetched client-side (avoids server IP blocking by Sofascore)
+export async function processSofascoreEvents(
+  roundId: string,
+  roundNumber: number,
+  tournamentId: string,
+  rawEvents: any[]
+): Promise<{ synced: number; unmatched: string[]; skipped: number; sofascoreRoundName?: string; error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { synced: 0, unmatched: [], skipped: 0, error: "Not authenticated." };
+
+  const admin = db();
+
+  const decided = rawEvents.filter(e => e.winnerCode === 1 || e.winnerCode === 2);
+  if (!decided.length) {
+    return { synced: 0, unmatched: [], skipped: 0, error: `No decided matches in the ${rawEvents.length} events received.` };
+  }
+
+  // Pick the right round by position: sort rounds by match count desc (most = earliest)
+  const counts = new Map<string, number>();
+  for (const e of decided) {
+    const name = e.roundInfo?.name ?? "Unknown";
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const sorted = Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const target = sorted[roundNumber - 1];
+  if (!target) {
+    const available = sorted.map(r => `${r.name} (${r.count})`).join(", ");
+    return { synced: 0, unmatched: [], skipped: 0, error: `Round ${roundNumber} not found. Available: ${available}` };
+  }
+
+  const targetEvents = decided.filter(e => e.roundInfo?.name === target.name);
+
+  const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId);
+  const { data: existingResults } = await admin.from("athlete_results").select("athlete_id").eq("round_id", roundId);
+  const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
+
+  const norm = (s: string) => s.toLowerCase().trim();
+  const last = (s: string) => norm(s).split(" ").slice(-1)[0];
+  const findAthlete = (sfName: string) => {
+    const n = norm(sfName);
+    const l = last(sfName);
+    return (athletes ?? []).find((a: any) => norm(a.name) === n)
+      ?? (athletes ?? []).find((a: any) => l.length > 3 && last(a.name) === l);
+  };
+
+  let synced = 0;
+  let skipped = 0;
+  const unmatched: string[] = [];
+
+  for (const event of targetEvents) {
+    const winnerName: string = event.winnerCode === 1 ? event.homeTeam?.name : event.awayTeam?.name;
+    const loserName: string = event.winnerCode === 1 ? event.awayTeam?.name : event.homeTeam?.name;
+    if (!winnerName || !loserName) continue;
+
+    for (const [sfName, result] of [[winnerName, "win"], [loserName, "loss"]] as const) {
+      const athlete = findAthlete(sfName);
+      if (!athlete) { unmatched.push(sfName); continue; }
+      if (existingAthleteIds.has(athlete.id)) { skipped++; continue; }
+      const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
+      if (!error) { existingAthleteIds.add(athlete.id); synced++; }
+    }
+  }
+
+  return { synced, unmatched: Array.from(new Set(unmatched)), skipped, sofascoreRoundName: target.name };
+}
