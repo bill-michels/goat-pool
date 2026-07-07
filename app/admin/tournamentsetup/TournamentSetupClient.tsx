@@ -1401,12 +1401,12 @@ function ManageTournament({
                 const tId = sfConnSaved ? sfSelectedTId : (tournament.sofascore_tournament_id ?? "");
                 const sId = sfConnSaved ? sfSelectedSeasonId : (tournament.sofascore_season_id ?? "");
 
-                // Fetch from Sofascore in the browser — bypasses server-side IP blocking
+                // Fetch via edge proxy (same-origin, avoids CORS + uses edge IPs)
                 const allEvents: any[] = [];
                 try {
                   const fetches = await Promise.allSettled(
                     Array.from({ length: 8 }, (_, i) =>
-                      fetch(`https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${sId}/events/last/${i}`)
+                      fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&page=${i}`)
                         .then(r => r.ok ? r.json() : null)
                     )
                   );
@@ -1416,7 +1416,7 @@ function ManageTournament({
                     }
                   }
                 } catch {
-                  setSfError("Could not reach Sofascore from your browser.");
+                  setSfError("Could not reach Sofascore.");
                   setSfSyncing(false);
                   return;
                 }
