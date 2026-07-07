@@ -1403,26 +1403,28 @@ function ManageTournament({
 
                 // Fetch via edge proxy (same-origin, avoids CORS + uses edge IPs)
                 const allEvents: any[] = [];
+                let proxyError: string | null = null;
                 try {
                   const fetches = await Promise.allSettled(
                     Array.from({ length: 8 }, (_, i) =>
                       fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&page=${i}`)
-                        .then(r => r.ok ? r.json() : null)
+                        .then(async r => ({ ok: r.ok, status: r.status, data: await r.json() }))
                     )
                   );
                   for (const r of fetches) {
-                    if (r.status === "fulfilled" && Array.isArray(r.value?.events)) {
-                      allEvents.push(...r.value.events);
-                    }
+                    if (r.status === "rejected") continue;
+                    const { ok, status, data } = r.value;
+                    if (!ok) { proxyError = data?.error ?? `HTTP ${status}`; continue; }
+                    if (Array.isArray(data?.events)) allEvents.push(...data.events);
                   }
-                } catch {
-                  setSfError("Could not reach Sofascore.");
+                } catch (e: any) {
+                  setSfError(`Network error: ${e?.message ?? String(e)}`);
                   setSfSyncing(false);
                   return;
                 }
 
                 if (!allEvents.length) {
-                  setSfError("Sofascore returned no events. Check your tournament and season IDs.");
+                  setSfError(proxyError ? `Sofascore error: ${proxyError}` : "Sofascore returned no events — check tournament and season IDs.");
                   setSfSyncing(false);
                   return;
                 }
