@@ -4,13 +4,16 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const tId = searchParams.get("tId");
   const sId = searchParams.get("sId");
+  const round = searchParams.get("round");
   const page = searchParams.get("page") ?? "0";
 
   if (!tId || !sId) {
     return Response.json({ error: "Missing tId or sId" }, { status: 400 });
   }
 
-  const sfUrl = `https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${sId}/events/last/${page}`;
+  // Prefer round-based endpoint when round is specified; fall back to paginated last-events
+  const sfPath = round ? `/events/round/${round}` : `/events/last/${page}`;
+  const sfUrl = `https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${sId}${sfPath}`;
 
   try {
     const res = await fetch(sfUrl, {
@@ -28,7 +31,8 @@ export async function GET(request: Request) {
     }
 
     const data = await res.json();
-    return Response.json(data);
+    // Pass through the data plus a diagnostic field showing top-level keys
+    return Response.json({ ...data, _keys: Object.keys(data), _url: sfUrl });
   } catch (e: any) {
     return Response.json({ error: e.message ?? String(e) }, { status: 500 });
   }

@@ -1404,18 +1404,29 @@ function ManageTournament({
                 // Fetch via edge proxy (same-origin, avoids CORS + uses edge IPs)
                 const allEvents: any[] = [];
                 let proxyError: string | null = null;
+                let diagKeys: string | null = null;
                 try {
-                  const fetches = await Promise.allSettled(
-                    Array.from({ length: 8 }, (_, i) =>
-                      fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&page=${i}`)
-                        .then(async r => ({ ok: r.ok, status: r.status, data: await r.json() }))
-                    )
-                  );
-                  for (const r of fetches) {
-                    if (r.status === "rejected") continue;
-                    const { ok, status, data } = r.value;
-                    if (!ok) { proxyError = data?.error ?? `HTTP ${status}`; continue; }
-                    if (Array.isArray(data?.events)) allEvents.push(...data.events);
+                  // Try round-based endpoint first (direct, no pagination needed)
+                  const roundFetch = await fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&round=${activeRound}`)
+                    .then(async r => ({ ok: r.ok, status: r.status, data: await r.json() }));
+
+                  if (roundFetch.ok && Array.isArray(roundFetch.data?.events) && roundFetch.data.events.length > 0) {
+                    allEvents.push(...roundFetch.data.events);
+                  } else {
+                    // Fall back to paginated last-events
+                    diagKeys = roundFetch.data?._keys?.join(", ") ?? null;
+                    const fetches = await Promise.allSettled(
+                      Array.from({ length: 8 }, (_, i) =>
+                        fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&page=${i}`)
+                          .then(async r => ({ ok: r.ok, status: r.status, data: await r.json() }))
+                      )
+                    );
+                    for (const r of fetches) {
+                      if (r.status === "rejected") continue;
+                      const { ok, status, data } = r.value;
+                      if (!ok) { proxyError = data?.error ?? `HTTP ${status}`; continue; }
+                      if (Array.isArray(data?.events)) allEvents.push(...data.events);
+                    }
                   }
                 } catch (e: any) {
                   setSfError(`Network error: ${e?.message ?? String(e)}`);
@@ -1424,7 +1435,12 @@ function ManageTournament({
                 }
 
                 if (!allEvents.length) {
-                  setSfError(proxyError ? `Sofascore error: ${proxyError}` : "Sofascore returned no events — check tournament and season IDs.");
+                  const detail = proxyError
+                    ? `Sofascore error: ${proxyError}`
+                    : diagKeys
+                    ? `No events found. Sofascore returned keys: [${diagKeys}] for tId=${tId} sId=${sId}`
+                    : `No events returned for tId=${tId} sId=${sId}`;
+                  setSfError(detail);
                   setSfSyncing(false);
                   return;
                 }
