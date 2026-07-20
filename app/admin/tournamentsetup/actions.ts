@@ -269,6 +269,35 @@ export async function concludeTournamentPools(
     .in("status", ["active", "open"]);
 }
 
+export async function concludeTournament(
+  tournamentId: string
+): Promise<{ error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { error: "Not authenticated." };
+
+  const admin = db();
+
+  // Mark any still-active rounds as completed
+  await admin
+    .from("rounds")
+    .update({ status: "completed" })
+    .eq("tournament_id", tournamentId)
+    .eq("status", "active");
+
+  // Mark tournament as concluded
+  const { error } = await admin
+    .from("tournaments")
+    .update({ status: "concluded" })
+    .eq("id", tournamentId);
+
+  if (error) return { error: error.message };
+
+  // Conclude all associated pools
+  await concludeTournamentPools(tournamentId);
+
+  return {};
+}
+
 export async function deleteTournament(
   tournamentId: string
 ): Promise<{ error?: string }> {

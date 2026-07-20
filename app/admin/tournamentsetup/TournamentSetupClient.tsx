@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournamentPools, processSofascoreEvents, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, processSofascoreEvents, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -826,6 +826,7 @@ function ManageTournament({
   const [assignedCount, setAssignedCount] = useState<number | null>(null);
   const [openingNextRound, setOpeningNextRound] = useState(false);
   const [completingRound, setCompletingRound] = useState(false);
+  const [concluding, setConcluding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Sofascore connection state
@@ -981,6 +982,31 @@ function ManageTournament({
           }}>
             Edit Athletes
           </button>
+          {tournament.status === "active" && (
+            <button
+              onClick={async () => {
+                if (!confirm(`Conclude "${tournament.name}"? This will mark all pools as concluded and cannot be undone.`)) return;
+                setConcluding(true);
+                setError(null);
+                const result = await concludeTournament(tournament.id);
+                if (result.error) {
+                  setError(result.error);
+                  setConcluding(false);
+                } else {
+                  router.refresh();
+                }
+              }}
+              disabled={concluding}
+              style={{
+                padding: "10px 20px", borderRadius: "10px",
+                border: `1.5px solid ${c.green}`, background: c.green,
+                color: c.white, fontSize: "14px", fontWeight: 600,
+                cursor: concluding ? "not-allowed" : "pointer",
+              }}
+            >
+              {concluding ? "Concluding..." : "Conclude Tournament"}
+            </button>
+          )}
           <button
             onClick={async () => {
               if (!confirm(`Delete "${tournament.name}"? This cannot be undone.`)) return;
@@ -1330,8 +1356,7 @@ function ManageTournament({
                     if (nextRound) {
                       await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
                     } else {
-                      await supabase.from("tournaments").update({ status: "concluded" }).eq("id", tournament.id);
-                      await concludeTournamentPools(tournament.id);
+                      await concludeTournament(tournament.id);
                     }
                     notifyRoundComplete(activeRoundData.id);
                     setCompletingRound(false);
