@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, processSofascoreEvents, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, importAthletesFromSofascore } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -133,13 +133,8 @@ function CreateTournament({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sofascore connection (saved alongside tournament)
-  const [sfSearch, setSfSearch] = useState("");
-  const [sfSearchResults, setSfSearchResults] = useState<Array<{ id: number; name: string; category: string }>>([]);
-  const [sfSearching, setSfSearching] = useState(false);
-  const [sfTId, setSfTId] = useState(initialTournament?.sofascore_tournament_id ?? "");
-  const [sfSeasons, setSfSeasons] = useState<Array<{ id: number; name: string }>>([]);
-  const [sfSeasonId, setSfSeasonId] = useState(initialTournament?.sofascore_season_id ?? "");
+  // Odds API sport key
+  const [oddsApiSportKey, setOddsApiSportKey] = useState((initialTournament as any)?.odds_api_sport_key ?? "");
 
   const roundCount = Math.min(Math.max(parseInt(numRounds) || 0, 1), 10);
 
@@ -175,8 +170,7 @@ function CreateTournament({
     let tournament = initialTournament;
 
     const sfFields = {
-      sofascore_tournament_id: sfTId || null,
-      sofascore_season_id: sfSeasonId || null,
+      odds_api_sport_key: oddsApiSportKey || null,
     };
 
     if (!tournament) {
@@ -372,79 +366,66 @@ function CreateTournament({
           </div>
         </div>
 
-        {/* Sofascore Connection */}
+        {/* Odds API Sport Key */}
         <div style={{ backgroundColor: c.white, borderRadius: "14px", padding: "20px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
           <p style={{ fontSize: "14px", fontWeight: 700, color: c.charcoal, margin: "0 0 4px" }}>
-            Connect to Sofascore <span style={{ fontWeight: 400, color: c.gray }}>(optional)</span>
+            Odds API Sport Key <span style={{ fontWeight: 400, color: c.gray }}>(optional)</span>
           </p>
-          <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 14px" }}>
-            Enables auto-syncing match results and importing the athlete draw.
+          <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 12px" }}>
+            Enables auto-syncing match results each round.
           </p>
-
-          {sfTId && sfSeasonId ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-              <span style={{ padding: "4px 10px", borderRadius: "6px", backgroundColor: c.greenMuted, color: c.green, fontSize: "12px", fontWeight: 600 }}>
-                Connected — ID {sfTId} / Season {sfSeasonId}
-              </span>
-              <button onClick={() => { setSfTId(""); setSfSeasonId(""); setSfSearchResults([]); }}
-                style={{ fontSize: "12px", color: c.gray, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                Remove
-              </button>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
-                <input
-                  value={sfSearch}
-                  onChange={e => setSfSearch(e.target.value)}
-                  placeholder="Search by name, e.g. Wimbledon"
-                  style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, fontSize: "14px" }}
-                />
-                <button
-                  onClick={async () => {
-                    if (!sfSearch.trim()) return;
-                    setSfSearching(true);
-                    const res = await searchSofascoreTournaments(sfSearch.trim());
-                    setSfSearchResults(res.results);
-                    setSfSearching(false);
-                  }}
-                  disabled={sfSearching}
-                  style={{ padding: "8px 16px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, background: c.white, color: c.charcoal, fontSize: "14px", fontWeight: 600, cursor: "pointer" }}
-                >
-                  {sfSearching ? "Searching…" : "Search"}
-                </button>
-              </div>
-
-              {sfSearchResults.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "10px" }}>
-                  {sfSearchResults.map(r => (
-                    <button key={r.id} onClick={async () => {
-                      setSfTId(String(r.id));
-                      setSfSeasons([]);
-                      setSfSeasonId("");
-                      const res = await fetchSofascoreSeasonsForTournament(String(r.id));
-                      if (res.seasons.length) setSfSeasons(res.seasons);
-                    }} style={{
-                      textAlign: "left", padding: "8px 12px", borderRadius: "8px",
-                      border: `1.5px solid ${sfTId === String(r.id) ? c.green : c.grayLight}`,
-                      background: sfTId === String(r.id) ? c.greenMuted : c.white,
-                      color: c.charcoal, fontSize: "13px", cursor: "pointer",
-                    }}>
-                      <strong>{r.name}</strong>
-                      {r.category && <span style={{ color: c.gray, marginLeft: "8px" }}>{r.category}</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {sfSeasons.length > 0 && (
-                <select value={sfSeasonId} onChange={e => setSfSeasonId(e.target.value)}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, fontSize: "14px" }}>
-                  <option value="">— select season / year —</option>
-                  {sfSeasons.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-                </select>
-              )}
-            </>
+          <select
+            value={oddsApiSportKey}
+            onChange={e => setOddsApiSportKey(e.target.value)}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, fontSize: "14px", color: c.charcoal }}
+          >
+            <option value="">— not connected —</option>
+            <optgroup label="ATP Grand Slams">
+              <option value="tennis_atp_aus_open_singles">Australian Open</option>
+              <option value="tennis_atp_french_open">French Open</option>
+              <option value="tennis_atp_wimbledon">Wimbledon</option>
+              <option value="tennis_atp_us_open">US Open</option>
+            </optgroup>
+            <optgroup label="ATP Masters 1000">
+              <option value="tennis_atp_indian_wells">Indian Wells</option>
+              <option value="tennis_atp_miami_open">Miami Open</option>
+              <option value="tennis_atp_monte_carlo_masters">Monte Carlo</option>
+              <option value="tennis_atp_madrid_open">Madrid Open</option>
+              <option value="tennis_atp_italian_open">Italian Open</option>
+              <option value="tennis_atp_canadian_open">Canadian Open</option>
+              <option value="tennis_atp_cincinnati_open">Cincinnati Open</option>
+              <option value="tennis_atp_shanghai_masters">Shanghai Masters</option>
+              <option value="tennis_atp_paris_masters">Paris Masters</option>
+            </optgroup>
+            <optgroup label="ATP 500">
+              <option value="tennis_atp_dubai">Dubai</option>
+              <option value="tennis_atp_barcelona_open">Barcelona Open</option>
+              <option value="tennis_atp_halle_open">Halle Open</option>
+              <option value="tennis_atp_queens_club_champ">Queen&apos;s Club</option>
+              <option value="tennis_atp_hamburg_open">Hamburg Open</option>
+              <option value="tennis_atp_china_open">China Open</option>
+            </optgroup>
+            <optgroup label="WTA Grand Slams">
+              <option value="tennis_wta_aus_open_singles">Australian Open (W)</option>
+              <option value="tennis_wta_french_open">French Open (W)</option>
+              <option value="tennis_wta_wimbledon">Wimbledon (W)</option>
+              <option value="tennis_wta_us_open">US Open (W)</option>
+            </optgroup>
+            <optgroup label="WTA 1000">
+              <option value="tennis_wta_indian_wells">Indian Wells (W)</option>
+              <option value="tennis_wta_miami_open">Miami Open (W)</option>
+              <option value="tennis_wta_madrid_open">Madrid Open (W)</option>
+              <option value="tennis_wta_italian_open">Italian Open (W)</option>
+              <option value="tennis_wta_canadian_open">Canadian Open (W)</option>
+              <option value="tennis_wta_cincinnati_open">Cincinnati Open (W)</option>
+              <option value="tennis_wta_wuhan_open">Wuhan Open (W)</option>
+              <option value="tennis_wta_china_open">China Open (W)</option>
+            </optgroup>
+          </select>
+          {oddsApiSportKey && (
+            <p style={{ fontSize: "12px", color: c.green, margin: "8px 0 0", fontWeight: 600 }}>
+              ✓ Connected: {oddsApiSportKey}
+            </p>
           )}
         </div>
 
@@ -494,8 +475,6 @@ function AddAthletes({
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
 
   const parseBulk = () => {
     setError(null);
@@ -622,41 +601,6 @@ function AddAthletes({
         </div>
       )}
 
-      {/* Import from Sofascore */}
-      {tournament.sofascore_tournament_id && tournament.sofascore_season_id && (
-        <div style={{ backgroundColor: c.greenMuted, borderRadius: "12px", padding: "16px 20px", border: `1px solid ${c.green}20`, marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-          <div>
-            <p style={{ fontSize: "13px", fontWeight: 700, color: c.green, margin: "0 0 2px" }}>Import draw from Sofascore</p>
-            <p style={{ fontSize: "12px", color: c.green, margin: 0, opacity: 0.8 }}>
-              Auto-fills all athletes with seeds. Connected to tournament ID {tournament.sofascore_tournament_id}.
-            </p>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
-            {importResult && <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>{importResult}</span>}
-            <button
-              onClick={async () => {
-                setImporting(true);
-                setImportResult(null);
-                const res = await importAthletesFromSofascore(tournament.id, tournament.sofascore_tournament_id, tournament.sofascore_season_id);
-                if (res.error) setError(res.error);
-                else {
-                  setImportResult(`✓ ${res.imported} athletes imported`);
-                  // Refresh athlete list from DB
-                  const { data } = await supabase.from("athletes").select("*").eq("tournament_id", tournament.id).order("seed");
-                  if (data) {
-                    setAthletes(data.map((a: any) => ({ ...a, _key: a.id })));
-                  }
-                }
-                setImporting(false);
-              }}
-              disabled={importing}
-              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: c.green, color: c.white, fontSize: "13px", fontWeight: 600, cursor: importing ? "not-allowed" : "pointer" }}
-            >
-              {importing ? "Importing…" : "Import Athletes"}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Bulk Add */}
       <div style={{ backgroundColor: c.white, borderRadius: "16px", padding: "24px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
@@ -829,21 +773,15 @@ function ManageTournament({
   const [concluding, setConcluding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sofascore connection state
-  const [sfConnectOpen, setSfConnectOpen] = useState(false);
-  const [sfSearch, setSfSearch] = useState("");
-  const [sfSearchResults, setSfSearchResults] = useState<Array<{ id: number; name: string; category: string }>>([]);
-  const [sfSearching, setSfSearching] = useState(false);
-  const [sfSelectedTId, setSfSelectedTId] = useState<string>(tournament.sofascore_tournament_id ?? "");
-  const [sfSeasons, setSfSeasons] = useState<Array<{ id: number; name: string }>>([]);
-  const [sfSelectedSeasonId, setSfSelectedSeasonId] = useState<string>(tournament.sofascore_season_id ?? "");
-  const [sfSavingConn, setSfSavingConn] = useState(false);
-  const [sfConnError, setSfConnError] = useState<string | null>(null);
-  const [sfConnSaved, setSfConnSaved] = useState(false);
+  // Odds API sport key edit state
+  const [oddsKeyEditing, setOddsKeyEditing] = useState(false);
+  const [oddsKeyDraft, setOddsKeyDraft] = useState((tournament as any).odds_api_sport_key ?? "");
+  const [oddsKeySaving, setOddsKeySaving] = useState(false);
+  const [oddsKeySaved, setOddsKeySaved] = useState(false);
 
-  // Sofascore sync state
+  // Sync state
   const [sfSyncing, setSfSyncing] = useState(false);
-  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number; sofascoreRoundName?: string } | null>(null);
+  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number } | null>(null);
   const [sfError, setSfError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
@@ -1040,133 +978,81 @@ function ManageTournament({
         </div>
       )}
 
-      {/* Sofascore Connection */}
+      {/* Odds API Connection */}
       <div style={{ backgroundColor: c.white, borderRadius: "12px", padding: "14px 20px", border: `1px solid ${c.grayLight}`, marginBottom: "20px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" as const }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal }}>Sofascore</span>
-            {(sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id) ? (
+            <span style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal }}>Odds API</span>
+            {oddsKeySaved || (tournament as any).odds_api_sport_key ? (
               <span style={{ fontSize: "12px", padding: "3px 8px", borderRadius: "6px", backgroundColor: c.greenMuted, color: c.green, fontWeight: 600 }}>
-                Connected — ID {sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id} / Season {sfConnSaved ? sfSelectedSeasonId : tournament.sofascore_season_id}
+                {oddsKeyDraft || (tournament as any).odds_api_sport_key}
               </span>
             ) : (
-              <span style={{ fontSize: "12px", color: c.gray }}>Not connected — connect to enable auto-sync</span>
+              <span style={{ fontSize: "12px", color: c.gray }}>No sport key — set one to enable auto-sync</span>
             )}
           </div>
           <button
-            onClick={() => { setSfConnectOpen(o => !o); setSfConnError(null); setSfConnSaved(false); }}
+            onClick={() => { setOddsKeyEditing(o => !o); setOddsKeySaved(false); }}
             style={{ padding: "5px 12px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, background: c.white, color: c.charcoal, fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
           >
-            {sfConnectOpen ? "Close" : (sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id) ? "Update" : "Connect"}
+            {oddsKeyEditing ? "Close" : oddsKeyDraft || (tournament as any).odds_api_sport_key ? "Update" : "Set Key"}
           </button>
         </div>
 
-        {sfConnectOpen && (
+        {oddsKeyEditing && (
           <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: `1px solid ${c.grayLight}` }}>
-            {/* Search */}
-            <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
-              <input
-                value={sfSearch}
-                onChange={e => setSfSearch(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") e.currentTarget.form?.requestSubmit?.(); }}
-                placeholder="Search tournament name (e.g. Wimbledon)"
-                style={{ flex: 1, padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px" }}
-              />
-              <button
-                onClick={async () => {
-                  if (!sfSearch.trim()) return;
-                  setSfSearching(true);
-                  const res = await searchSofascoreTournaments(sfSearch.trim());
-                  setSfSearchResults(res.results);
-                  if (res.error) setSfConnError(res.error);
-                  setSfSearching(false);
-                }}
-                disabled={sfSearching}
-                style={{ padding: "7px 14px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, background: c.white, color: c.charcoal, fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
-              >
-                {sfSearching ? "Searching…" : "Search"}
-              </button>
-            </div>
-
-            {/* Search results */}
-            {sfSearchResults.length > 0 && (
-              <div style={{ marginBottom: "10px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                {sfSearchResults.map(r => (
-                  <button
-                    key={r.id}
-                    onClick={async () => {
-                      setSfSelectedTId(String(r.id));
-                      setSfSeasons([]);
-                      setSfSelectedSeasonId("");
-                      const res = await fetchSofascoreSeasonsForTournament(String(r.id));
-                      if (res.seasons.length) setSfSeasons(res.seasons);
-                      if (res.error) setSfConnError(res.error);
-                    }}
-                    style={{
-                      textAlign: "left", padding: "8px 12px", borderRadius: "7px",
-                      border: `1px solid ${sfSelectedTId === String(r.id) ? c.green : c.grayLight}`,
-                      background: sfSelectedTId === String(r.id) ? c.greenMuted : c.white,
-                      color: c.charcoal, fontSize: "13px", cursor: "pointer",
-                    }}
-                  >
-                    <strong>{r.name}</strong>
-                    {r.category ? <span style={{ color: c.gray, marginLeft: "8px" }}>{r.category}</span> : null}
-                    <span style={{ color: c.gray, marginLeft: "8px", fontSize: "12px" }}>ID: {r.id}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Season select */}
-            {sfSeasons.length > 0 && (
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "10px" }}>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: c.gray, whiteSpace: "nowrap" }}>Season:</label>
-                <select
-                  value={sfSelectedSeasonId}
-                  onChange={e => setSfSelectedSeasonId(e.target.value)}
-                  style={{ padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", flex: 1 }}
-                >
-                  <option value="">— select season —</option>
-                  {sfSeasons.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-                </select>
-              </div>
-            )}
-
-            {/* Manual entry fallback */}
-            <details style={{ marginBottom: "10px" }}>
-              <summary style={{ fontSize: "12px", color: c.gray, cursor: "pointer" }}>Enter IDs manually</summary>
-              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                <input value={sfSelectedTId} onChange={e => setSfSelectedTId(e.target.value)} placeholder="Tournament ID" style={{ padding: "6px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", width: "120px" }} />
-                <input value={sfSelectedSeasonId} onChange={e => setSfSelectedSeasonId(e.target.value)} placeholder="Season ID" style={{ padding: "6px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", width: "120px" }} />
-              </div>
-            </details>
-
+            <label style={{ fontSize: "12px", fontWeight: 600, color: c.gray, display: "block", marginBottom: "6px" }}>Sport Key</label>
+            <select
+              value={oddsKeyDraft}
+              onChange={e => setOddsKeyDraft(e.target.value)}
+              style={{ width: "100%", padding: "7px 10px", borderRadius: "7px", border: `1px solid ${c.grayLight}`, fontSize: "13px", marginBottom: "10px" }}
+            >
+              <option value="">— select sport key —</option>
+              <optgroup label="ATP Masters / Grand Slams">
+                <option value="tennis_atp_australian_open">Australian Open (ATP)</option>
+                <option value="tennis_atp_french_open">French Open (ATP)</option>
+                <option value="tennis_atp_wimbledon">Wimbledon (ATP)</option>
+                <option value="tennis_atp_us_open">US Open (ATP)</option>
+                <option value="tennis_atp_miami_open">Miami Open (ATP)</option>
+                <option value="tennis_atp_madrid_open">Madrid Open (ATP)</option>
+                <option value="tennis_atp_rome">Rome (ATP)</option>
+                <option value="tennis_atp_canadian_open">Canadian Open (ATP)</option>
+                <option value="tennis_atp_cincinnati_open">Cincinnati Open (ATP)</option>
+                <option value="tennis_atp_shanghai">Shanghai (ATP)</option>
+                <option value="tennis_atp_paris_masters">Paris Masters (ATP)</option>
+                <option value="tennis_atp_nitto_atp_finals">ATP Finals</option>
+              </optgroup>
+              <optgroup label="WTA Majors">
+                <option value="tennis_wta_australian_open">Australian Open (WTA)</option>
+                <option value="tennis_wta_french_open">French Open (WTA)</option>
+                <option value="tennis_wta_wimbledon">Wimbledon (WTA)</option>
+                <option value="tennis_wta_us_open">US Open (WTA)</option>
+                <option value="tennis_wta_miami_open">Miami Open (WTA)</option>
+                <option value="tennis_wta_madrid_open">Madrid Open (WTA)</option>
+                <option value="tennis_wta_rome">Rome (WTA)</option>
+                <option value="tennis_wta_canadian_open">Canadian Open (WTA)</option>
+                <option value="tennis_wta_cincinnati_open">Cincinnati Open (WTA)</option>
+                <option value="tennis_wta_wta_finals">WTA Finals</option>
+              </optgroup>
+            </select>
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               <button
                 onClick={async () => {
-                  if (!sfSelectedTId || !sfSelectedSeasonId) return;
-                  setSfSavingConn(true);
-                  setSfConnError(null);
-                  const res = await saveSofascoreConnection(tournament.id, sfSelectedTId, sfSelectedSeasonId);
-                  if (res.error) setSfConnError(res.error);
-                  else {
-                    setSfConnSaved(true);
-                    router.refresh();
-                  }
-                  setSfSavingConn(false);
+                  setOddsKeySaving(true);
+                  const res = await saveOddsApiSportKey(tournament.id, oddsKeyDraft || null);
+                  if (!res.error) { setOddsKeySaved(true); setOddsKeyEditing(false); router.refresh(); }
+                  setOddsKeySaving(false);
                 }}
-                disabled={sfSavingConn || !sfSelectedTId || !sfSelectedSeasonId}
+                disabled={oddsKeySaving}
                 style={{
                   padding: "7px 16px", borderRadius: "7px", border: "none",
-                  background: sfSelectedTId && sfSelectedSeasonId ? c.green : c.grayLight,
-                  color: sfSelectedTId && sfSelectedSeasonId ? c.white : c.gray,
-                  fontSize: "13px", fontWeight: 600, cursor: sfSelectedTId && sfSelectedSeasonId ? "pointer" : "not-allowed",
+                  background: c.green, color: c.white,
+                  fontSize: "13px", fontWeight: 600, cursor: oddsKeySaving ? "not-allowed" : "pointer",
                 }}
               >
-                {sfSavingConn ? "Saving…" : "Save Connection"}
+                {oddsKeySaving ? "Saving…" : "Save"}
               </button>
-              {sfConnSaved && <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>✓ Saved</span>}
-              {sfConnError && <span style={{ fontSize: "13px", color: "#EF4444" }}>{sfConnError}</span>}
+              {oddsKeySaved && <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>✓ Saved</span>}
             </div>
           </div>
         )}
@@ -1386,17 +1272,17 @@ function ManageTournament({
           </div>
         </div>
 
-        {/* Sofascore sync — shown for all rounds when tournament is connected */}
-        {(sfConnSaved ? sfSelectedTId : tournament.sofascore_tournament_id) && (
+        {/* Odds API sync — shown for all rounds when a sport key is set */}
+        {(oddsKeySaved || (tournament as any).odds_api_sport_key) && (
           <div style={{
             backgroundColor: c.white, borderRadius: "14px", padding: "18px 22px",
             border: `1px solid ${c.grayLight}`, marginBottom: "20px",
             display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexWrap: "wrap",
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: "14px", fontWeight: 700, color: c.charcoal, margin: "0 0 2px" }}>Sofascore Sync</p>
+              <p style={{ fontSize: "14px", fontWeight: 700, color: c.charcoal, margin: "0 0 2px" }}>Odds API Sync</p>
               <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 10px" }}>
-                Pull Round {activeRound} results directly from Sofascore.
+                Pull Round {activeRound} results from the Odds API.
               </p>
               {sfError && (
                 <p style={{ fontSize: "13px", color: "#EF4444", margin: "0" }}>{sfError}</p>
@@ -1404,9 +1290,6 @@ function ManageTournament({
               {sfResult && (
                 <div style={{ fontSize: "13px" }}>
                   <span style={{ color: c.green, fontWeight: 600 }}>✓ {sfResult.synced} results synced</span>
-                  {sfResult.sofascoreRoundName && (
-                    <span style={{ color: c.gray, marginLeft: "10px" }}>&ldquo;{sfResult.sofascoreRoundName}&rdquo;</span>
-                  )}
                   {sfResult.skipped > 0 && <span style={{ color: c.gray, marginLeft: "10px" }}>{sfResult.skipped} already recorded</span>}
                   {sfResult.unmatched.length > 0 && (
                     <div style={{ marginTop: "6px", color: "#D97706" }}>
@@ -1420,57 +1303,12 @@ function ManageTournament({
             <button
               onClick={async () => {
                 if (!activeRoundData) return;
+                const sportKey = oddsKeyDraft || (tournament as any).odds_api_sport_key;
+                if (!sportKey) return;
                 setSfSyncing(true);
                 setSfError(null);
                 setSfResult(null);
-                const tId = sfConnSaved ? sfSelectedTId : (tournament.sofascore_tournament_id ?? "");
-                const sId = sfConnSaved ? sfSelectedSeasonId : (tournament.sofascore_season_id ?? "");
-
-                // Fetch via edge proxy (same-origin, avoids CORS + uses edge IPs)
-                const allEvents: any[] = [];
-                let proxyError: string | null = null;
-                let diagKeys: string | null = null;
-                try {
-                  // Try round-based endpoint first (direct, no pagination needed)
-                  const roundFetch = await fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&round=${activeRound}`)
-                    .then(async r => ({ ok: r.ok, status: r.status, data: await r.json() }));
-
-                  if (roundFetch.ok && Array.isArray(roundFetch.data?.events) && roundFetch.data.events.length > 0) {
-                    allEvents.push(...roundFetch.data.events);
-                  } else {
-                    // Fall back to paginated last-events
-                    diagKeys = roundFetch.data?._keys?.join(", ") ?? null;
-                    const fetches = await Promise.allSettled(
-                      Array.from({ length: 8 }, (_, i) =>
-                        fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&page=${i}`)
-                          .then(async r => ({ ok: r.ok, status: r.status, data: await r.json() }))
-                      )
-                    );
-                    for (const r of fetches) {
-                      if (r.status === "rejected") continue;
-                      const { ok, status, data } = r.value;
-                      if (!ok) { proxyError = data?.error ?? `HTTP ${status}`; continue; }
-                      if (Array.isArray(data?.events)) allEvents.push(...data.events);
-                    }
-                  }
-                } catch (e: any) {
-                  setSfError(`Network error: ${e?.message ?? String(e)}`);
-                  setSfSyncing(false);
-                  return;
-                }
-
-                if (!allEvents.length) {
-                  const detail = proxyError
-                    ? `Sofascore error: ${proxyError}`
-                    : diagKeys
-                    ? `No events found. Sofascore returned keys: [${diagKeys}] for tId=${tId} sId=${sId}`
-                    : `No events returned for tId=${tId} sId=${sId}`;
-                  setSfError(detail);
-                  setSfSyncing(false);
-                  return;
-                }
-
-                const res = await processSofascoreEvents(activeRoundData.id, activeRound, tournament.id, allEvents);
+                const res = await syncRoundFromOddsApi(activeRoundData.id, activeRound, tournament.id, sportKey);
                 if (res.error) setSfError(res.error);
                 else { setSfResult(res); if (res.synced > 0) router.refresh(); }
                 setSfSyncing(false);

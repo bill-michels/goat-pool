@@ -9,123 +9,98 @@ const db = () =>
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-const SF_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "application/json",
-  "Referer": "https://www.sofascore.com/",
-};
+async function fetchOddsApiScores(sportKey: string): Promise<any[]> {
+  const key = process.env.ODDS_API_KEY;
+  if (!key) return [];
+  const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${key}&daysFrom=3`;
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data as any[]).filter(e => e.completed === true);
+}
 
-async function fetchSofascoreEvents(tId: string, seasonId: string): Promise<any[]> {
-  const results = await Promise.allSettled(
-    Array.from({ length: 5 }, (_, i) =>
-      fetch(
-        `https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${seasonId}/events/last/${i}`,
-        { headers: SF_HEADERS }
-      ).then(r => r.ok ? r.json() : null)
-    )
-  );
-  return results
-    .filter(r => r.status === "fulfilled" && Array.isArray((r as any).value?.events))
-    .flatMap(r => (r as any).value.events as any[])
-    .filter(e => e.winnerCode === 1 || e.winnerCode === 2);
+function getWinnerLoser(event: any): { winnerName: string; loserName: string } | null {
+  const scores: Array<{ name: string; score: string }> = event.scores ?? [];
+  if (scores.length !== 2) return null;
+  const [a, b] = scores;
+  const aScore = parseFloat(a.score ?? "0");
+  const bScore = parseFloat(b.score ?? "0");
+  if (aScore === bScore) return null;
+  return aScore > bScore
+    ? { winnerName: a.name, loserName: b.name }
+    : { winnerName: b.name, loserName: a.name };
 }
 
 async function syncTournament(
   admin: ReturnType<typeof db>,
-  tournament: { id: string; sofascore_tournament_id: string; sofascore_season_id: string }
+  tournament: { id: string; name: string; odds_api_sport_key: string }
 ): Promise<{ synced: number; tournamentName: string }> {
-  // Find the active round
   const { data: rounds } = await admin
     .from("rounds")
     .select("id, round_number, status")
     .eq("tournament_id", tournament.id)
     .eq("status", "active");
 
-  if (!rounds?.length) return { synced: 0, tournamentName: tournament.id };
+  if (!rounds?.length) return { synced: 0, tournamentName: tournament.name };
 
-  const { data: tournamentData } = await admin
-    .from("tournaments")
-    .select("name")
-    .eq("id", tournament.id)
-    .single();
-
-  // Get all athletes for this tournament that are still active (not yet eliminated)
   const { data: athletes } = await admin
     .from("athletes")
     .select("id, name, status")
     .eq("tournament_id", tournament.id)
     .eq("status", "active");
 
-  if (!athletes?.length) return { synced: 0, tournamentName: tournamentData?.name ?? tournament.id };
+  if (!athletes?.length) return { synced: 0, tournamentName: tournament.name };
 
-  // For each active round, find athletes with no result yet
+  const events = await fetchOddsApiScores(tournament.odds_api_sport_key);
+  if (!events.length) return { synced: 0, tournamentName: tournament.name };
+
   const norm = (s: string) => s.toLowerCase().trim();
   const last = (s: string) => norm(s).split(" ").slice(-1)[0];
-
-  const findAthlete = (sfName: string) => {
-    const n = norm(sfName);
-    const l = last(sfName);
+  const findAthlete = (name: string) => {
+    const n = norm(name);
+    const l = last(name);
     return athletes.find((a: any) => norm(a.name) === n)
       ?? athletes.find((a: any) => l.length > 3 && last(a.name) === l);
   };
 
-  // Fetch Sofascore completed matches
-  const events = await fetchSofascoreEvents(
-    tournament.sofascore_tournament_id,
-    tournament.sofascore_season_id
-  );
-
   let totalSynced = 0;
 
   for (const round of rounds) {
-    // Get athletes who already have a result for this round
     const { data: existingResults } = await admin
       .from("athlete_results")
       .select("athlete_id")
       .eq("round_id", round.id);
     const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
 
-    // Find Sofascore matches where BOTH players are in our active athletes
-    // and neither has a result yet for this round
     for (const event of events) {
-      const homeName: string = event.homeTeam?.name;
-      const awayName: string = event.awayTeam?.name;
-      if (!homeName || !awayName || !event.winnerCode) continue;
+      const wl = getWinnerLoser(event);
+      if (!wl) continue;
 
-      const homeAthlete = findAthlete(homeName);
-      const awayAthlete = findAthlete(awayName);
+      const winnerAthlete = findAthlete(wl.winnerName);
+      const loserAthlete = findAthlete(wl.loserName);
+      if (!winnerAthlete || !loserAthlete) continue;
+      if (existingAthleteIds.has(winnerAthlete.id) && existingAthleteIds.has(loserAthlete.id)) continue;
 
-      // Only process if both athletes are recognized and at least one lacks a result
-      if (!homeAthlete || !awayAthlete) continue;
-      if (existingAthleteIds.has(homeAthlete.id) && existingAthleteIds.has(awayAthlete.id)) continue;
-
-      const winnerId = event.winnerCode === 1 ? homeAthlete.id : awayAthlete.id;
-      const loserId = event.winnerCode === 1 ? awayAthlete.id : homeAthlete.id;
-
-      for (const [athleteId, result] of [[winnerId, "win"], [loserId, "loss"]] as const) {
+      for (const [athleteId, result] of [[winnerAthlete.id, "win"], [loserAthlete.id, "loss"]] as const) {
         if (existingAthleteIds.has(athleteId)) continue;
 
-        // Upsert the athlete_result
         const { error: resErr } = await admin.from("athlete_results").upsert(
           { round_id: round.id, athlete_id: athleteId, result, recorded_by: null },
           { onConflict: "round_id,athlete_id" }
         );
         if (resErr) continue;
 
-        // Update athlete status
         if (result === "loss") {
           await admin.from("athletes")
             .update({ status: "eliminated", eliminated_in_round: round.round_number })
             .eq("id", athleteId);
         }
 
-        // Update picks for this athlete/round
         await admin.from("picks")
           .update({ result })
           .eq("athlete_id", athleteId)
           .eq("round_id", round.id);
 
-        // If loss, decrement lives and possibly eliminate pool players
         if (result === "loss") {
           const { data: affectedPicks } = await admin
             .from("picks")
@@ -155,7 +130,7 @@ async function syncTournament(
     }
   }
 
-  return { synced: totalSynced, tournamentName: tournamentData?.name ?? tournament.id };
+  return { synced: totalSynced, tournamentName: tournament.name };
 }
 
 export async function GET(request: Request) {
@@ -166,16 +141,14 @@ export async function GET(request: Request) {
 
   const admin = db();
 
-  // Find active tournaments with Sofascore IDs configured
   const { data: tournaments } = await admin
     .from("tournaments")
-    .select("id, sofascore_tournament_id, sofascore_season_id")
+    .select("id, name, odds_api_sport_key")
     .eq("status", "active")
-    .not("sofascore_tournament_id", "is", null)
-    .not("sofascore_season_id", "is", null);
+    .not("odds_api_sport_key", "is", null);
 
   if (!tournaments?.length) {
-    return NextResponse.json({ message: "No active tournaments with Sofascore IDs configured." });
+    return NextResponse.json({ message: "No active tournaments with Odds API sport key configured." });
   }
 
   const results = await Promise.allSettled(

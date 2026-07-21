@@ -510,6 +510,20 @@ export async function fetchSofascoreSeasonsForTournament(
   }
 }
 
+export async function saveOddsApiSportKey(
+  tournamentId: string,
+  sportKey: string | null
+): Promise<{ error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { error: "Not authenticated." };
+  const admin = db();
+  const { error } = await admin
+    .from("tournaments")
+    .update({ odds_api_sport_key: sportKey })
+    .eq("id", tournamentId);
+  return error ? { error: error.message } : {};
+}
+
 export async function saveSofascoreConnection(
   tournamentId: string,
   sofascoreTId: string,
@@ -799,4 +813,77 @@ export async function processSofascoreEvents(
   }
 
   return { synced, unmatched: Array.from(new Set(unmatched)), skipped, sofascoreRoundName: target.name };
+}
+
+export async function syncRoundFromOddsApi(
+  roundId: string,
+  roundNumber: number,
+  tournamentId: string,
+  sportKey: string
+): Promise<{ synced: number; unmatched: string[]; skipped: number; error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { synced: 0, unmatched: [], skipped: 0, error: "Not authenticated." };
+
+  const apiKey = process.env.ODDS_API_KEY;
+  if (!apiKey) return { synced: 0, unmatched: [], skipped: 0, error: "ODDS_API_KEY not configured." };
+
+  const res = await fetch(
+    `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${apiKey}&daysFrom=3`
+  );
+  if (!res.ok) {
+    return { synced: 0, unmatched: [], skipped: 0, error: `Odds API returned ${res.status}` };
+  }
+
+  const events: any[] = await res.json();
+  const completed = events.filter(e => e.completed === true);
+
+  if (!completed.length) {
+    return { synced: 0, unmatched: [], skipped: 0, error: "No completed matches found in the last 3 days." };
+  }
+
+  const admin = db();
+
+  const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId);
+  const { data: existingResults } = await admin.from("athlete_results").select("athlete_id").eq("round_id", roundId);
+  const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
+
+  const norm = (s: string) => s.toLowerCase().trim();
+  const last = (s: string) => norm(s).split(" ").slice(-1)[0];
+  const findAthlete = (name: string) => {
+    const n = norm(name);
+    const l = last(name);
+    return (athletes ?? []).find((a: any) => norm(a.name) === n)
+      ?? (athletes ?? []).find((a: any) => l.length > 3 && last(a.name) === l);
+  };
+
+  let synced = 0;
+  let skipped = 0;
+  const unmatched: string[] = [];
+
+  for (const event of completed) {
+    const scores: Array<{ name: string; score: string }> = event.scores ?? [];
+    if (scores.length !== 2) continue;
+    const [a, b] = scores;
+    const aScore = parseFloat(a.score ?? "0");
+    const bScore = parseFloat(b.score ?? "0");
+    if (aScore === bScore) continue;
+
+    const winnerName = aScore > bScore ? a.name : b.name;
+    const loserName = aScore > bScore ? b.name : a.name;
+
+    const winnerAthlete = findAthlete(winnerName);
+    const loserAthlete = findAthlete(loserName);
+
+    for (const [sfName, athlete, result] of [
+      [winnerName, winnerAthlete, "win"],
+      [loserName, loserAthlete, "loss"],
+    ] as const) {
+      if (!athlete) { unmatched.push(sfName); continue; }
+      if (existingAthleteIds.has(athlete.id)) { skipped++; continue; }
+      const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
+      if (!error) { existingAthleteIds.add(athlete.id); synced++; }
+    }
+  }
+
+  return { synced, unmatched: Array.from(new Set(unmatched)), skipped };
 }
