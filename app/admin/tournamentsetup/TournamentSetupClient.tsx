@@ -920,7 +920,7 @@ function ManageTournament({
           }}>
             Edit Athletes
           </button>
-          {tournament.status === "active" && (
+          {tournament.status !== "concluded" && (
             <button
               onClick={async () => {
                 if (!confirm(`Conclude "${tournament.name}"? This will mark all pools as concluded and cannot be undone.`)) return;
