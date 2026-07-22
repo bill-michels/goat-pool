@@ -1212,6 +1212,7 @@ function ManageTournament({
                     if (!nextRound || nextRoundAlreadyOpen) return;
                     setOpeningNextRound(true);
                     await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
+                    await supabase.from("tournaments").update({ status: "active" }).eq("id", tournament.id).neq("status", "concluded");
                     setOpeningNextRound(false);
                     router.refresh();
                   }}
