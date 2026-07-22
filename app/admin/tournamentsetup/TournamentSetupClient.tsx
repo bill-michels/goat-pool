@@ -927,9 +927,9 @@ function ManageTournament({
                 setConcluding(true);
                 setError(null);
                 const result = await concludeTournament(tournament.id);
+                setConcluding(false);
                 if (result.error) {
                   setError(result.error);
-                  setConcluding(false);
                 } else {
                   router.refresh();
                 }
