@@ -405,6 +405,9 @@ function CreateTournament({
               <option value="tennis_atp_hamburg_open">Hamburg Open</option>
               <option value="tennis_atp_china_open">China Open</option>
             </optgroup>
+            <optgroup label="ATP 250">
+              <option value="tennis_atp_washington_open">Washington Open</option>
+            </optgroup>
             <optgroup label="WTA Grand Slams">
               <option value="tennis_wta_aus_open_singles">Australian Open (W)</option>
               <option value="tennis_wta_french_open">French Open (W)</option>
@@ -1022,6 +1025,9 @@ function ManageTournament({
                 <option value="tennis_atp_paris_masters">Paris Masters (ATP)</option>
                 <option value="tennis_atp_nitto_atp_finals">ATP Finals</option>
               </optgroup>
+              <optgroup label="ATP 250 / 500">
+                <option value="tennis_atp_washington_open">Washington Open (ATP)</option>
+              </optgroup>
               <optgroup label="WTA Majors">
                 <option value="tennis_wta_australian_open">Australian Open (WTA)</option>
                 <option value="tennis_wta_french_open">French Open (WTA)</option>
@@ -1033,6 +1039,7 @@ function ManageTournament({
                 <option value="tennis_wta_canadian_open">Canadian Open (WTA)</option>
                 <option value="tennis_wta_cincinnati_open">Cincinnati Open (WTA)</option>
                 <option value="tennis_wta_wta_finals">WTA Finals</option>
+                <option value="tennis_wta_washington_open">Washington Open (WTA)</option>
               </optgroup>
             </select>
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
