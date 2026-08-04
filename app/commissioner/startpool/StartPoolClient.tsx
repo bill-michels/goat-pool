@@ -115,6 +115,7 @@ export default function StartPoolClient({
   const [fee, setFee] = useState("");
 
   // Step 2
+  const [poolType, setPoolType] = useState<"rounds" | "daily">("rounds");
   const [missedPickRule, setMissedPickRule] = useState("top_seed");
   const [commissionerPlaying, setCommissionerPlaying] = useState(true);
   const [commissionerLives, setCommissionerLives] = useState("1");
@@ -152,6 +153,7 @@ export default function StartPoolClient({
         commissioner_id: userId,
         fee_per_life: feeCents,
         missed_pick_rule: missedPickRule,
+        pool_type: poolType,
         take_rate: 50,
         status: "active",
       })
@@ -318,18 +320,29 @@ export default function StartPoolClient({
         {/* Step 2: Rules */}
         {step === 2 && (
           <div style={{ backgroundColor: c.white, borderRadius: "16px", padding: "32px", border: `1px solid ${c.grayLight}` }}>
-            <FormField label="Missed Pick Rule" hint="What happens if a player forgets to submit their pick before the deadline.">
+            <FormField label="Pick Format" hint="By Round: one pick per tournament round. Daily: one pick per calendar day — harder, more picks.">
               <ToggleOption
                 options={[
-                  { value: "top_seed", label: "Top Seed Remaining" },
-                  { value: "random", label: "Random Athlete" },
+                  { value: "rounds", label: "By Round" },
+                  { value: "daily", label: "Daily" },
                 ]}
-                selected={missedPickRule}
-                onSelect={setMissedPickRule}
+                selected={poolType}
+                onSelect={(v) => setPoolType(v as "rounds" | "daily")}
               />
             </FormField>
 
             <div style={{ borderTop: `1px solid ${c.grayLight}`, paddingTop: "24px" }}>
+              <FormField label="Missed Pick Rule" hint="What happens if a player forgets to submit their pick before the deadline.">
+                <ToggleOption
+                  options={[
+                    { value: "top_seed", label: "Top Seed Remaining" },
+                    { value: "random", label: "Random Athlete" },
+                  ]}
+                  selected={missedPickRule}
+                  onSelect={setMissedPickRule}
+                />
+              </FormField>
+
               <FormField label="Are you playing?" hint="Join your own pool as a player. No fee charged to you.">
                 <ToggleOption
                   options={[

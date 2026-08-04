@@ -11,7 +11,8 @@ const c = {
   amber: "#D97706", amberMuted: "#FEF3C7",
 };
 
-function roundLabel(roundNumber: number, totalRounds: number): string {
+function roundLabel(roundNumber: number, totalRounds: number, poolType: string): string {
+  if (poolType === "daily") return `Day ${roundNumber}`;
   const fromEnd = totalRounds - roundNumber;
   if (fromEnd === 0) return "Final";
   if (fromEnd === 1) return "SF";
@@ -31,7 +32,7 @@ type Props = {
   username: string;
   isCommissioner: boolean;
   pool: { id: string; name: string; slug: string };
-  activeRound: { id: string; roundNumber: number; lockDeadline: string | null; totalRounds: number };
+  activeRound: { id: string; roundNumber: number; lockDeadline: string | null; totalRounds: number; poolType: string };
   membership: { livesRemaining: number; livesPurchased: number };
   athletes: Athlete[];
   previousPickNames: string[];
@@ -55,7 +56,7 @@ export default function PlacePickClient({
   const selectedAthlete = athletes.find(a => a.id === selectedId) ?? null;
   const filtered = athletes.filter(a => a.name.toLowerCase().includes(search.toLowerCase()));
 
-  const rLabel = roundLabel(activeRound.roundNumber, activeRound.totalRounds);
+  const rLabel = roundLabel(activeRound.roundNumber, activeRound.totalRounds, activeRound.poolType);
 
   function handleConfirm() {
     if (!selectedId) return;

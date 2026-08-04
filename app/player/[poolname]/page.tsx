@@ -17,7 +17,7 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
     adminClient.from("users").select("username, role").eq("id", user.id).single(),
     adminClient
       .from("pools")
-      .select("id, name, slug, status, tournament_id, tournaments(id, name, num_rounds), users!pools_commissioner_id_fkey(username)")
+      .select("id, name, slug, status, pool_type, tournament_id, tournaments(id, name, num_rounds), users!pools_commissioner_id_fkey(username)")
       .eq("slug", params.poolname)
       .single(),
   ]);
@@ -108,6 +108,7 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
         name: pool.name,
         slug: pool.slug,
         status: pool.status,
+        poolType: (pool as any).pool_type ?? "rounds",
         tournamentName: tournament?.name ?? "—",
         commissionerUsername,
         totalRounds,

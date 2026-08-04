@@ -9,10 +9,10 @@ const db = () =>
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-async function fetchOddsApiScores(sportKey: string): Promise<any[]> {
+async function fetchOddsApiScores(sportKey: string, daysFrom: number = 3): Promise<any[]> {
   const key = process.env.ODDS_API_KEY;
   if (!key) return [];
-  const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${key}&daysFrom=3`;
+  const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${key}&daysFrom=${daysFrom}`;
   const res = await fetch(url);
   if (!res.ok) return [];
   const data = await res.json();
@@ -33,7 +33,8 @@ function getWinnerLoser(event: any): { winnerName: string; loserName: string } |
 
 async function syncTournament(
   admin: ReturnType<typeof db>,
-  tournament: { id: string; name: string; odds_api_sport_key: string }
+  tournament: { id: string; name: string; odds_api_sport_key: string },
+  daysFrom: number = 3
 ): Promise<{ synced: number; tournamentName: string }> {
   const { data: rounds } = await admin
     .from("rounds")
@@ -51,7 +52,7 @@ async function syncTournament(
 
   if (!athletes?.length) return { synced: 0, tournamentName: tournament.name };
 
-  const events = await fetchOddsApiScores(tournament.odds_api_sport_key);
+  const events = await fetchOddsApiScores(tournament.odds_api_sport_key, daysFrom);
   if (!events.length) return { synced: 0, tournamentName: tournament.name };
 
   const norm = (s: string) => s.toLowerCase().trim();
@@ -147,12 +148,23 @@ export async function GET(request: Request) {
     .eq("status", "active")
     .not("odds_api_sport_key", "is", null);
 
+  // For each tournament, check if any pool is daily type (use daysFrom=1 to avoid cross-day bleed)
+  const dailyTournamentIds = new Set<string>();
+  if (tournaments?.length) {
+    const { data: dailyPools } = await admin
+      .from("pools")
+      .select("tournament_id")
+      .in("tournament_id", tournaments.map(t => t.id))
+      .eq("pool_type", "daily");
+    (dailyPools ?? []).forEach((p: any) => dailyTournamentIds.add(p.tournament_id));
+  }
+
   if (!tournaments?.length) {
     return NextResponse.json({ message: "No active tournaments with Odds API sport key configured." });
   }
 
   const results = await Promise.allSettled(
-    tournaments.map(t => syncTournament(admin, t as any))
+    tournaments.map(t => syncTournament(admin, t as any, dailyTournamentIds.has(t.id) ? 1 : 3))
   );
 
   const summary = results.map((r, i) =>

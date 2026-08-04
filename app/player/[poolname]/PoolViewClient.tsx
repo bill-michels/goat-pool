@@ -11,7 +11,8 @@ const c = {
   amber: "#D97706", amberMuted: "#FEF3C7",
 };
 
-function roundLabel(roundNumber: number, totalRounds: number): string {
+function roundLabel(roundNumber: number, totalRounds: number, poolType: string): string {
+  if (poolType === "daily") return `Day ${roundNumber}`;
   const fromEnd = totalRounds - roundNumber;
   if (fromEnd === 0) return "Final";
   if (fromEnd === 1) return "SF";
@@ -40,7 +41,7 @@ type Props = {
   userId: string;
   username: string;
   isCommissioner: boolean;
-  pool: { id: string; name: string; slug: string; status: string; tournamentName: string; commissionerUsername: string; totalRounds: number };
+  pool: { id: string; name: string; slug: string; status: string; poolType: string; tournamentName: string; commissionerUsername: string; totalRounds: number };
   membership: { status: string; livesRemaining: number; livesPurchased: number } | null;
   rounds: Round[];
   players: Player[];
@@ -116,7 +117,7 @@ export default function PoolViewClient({
               textAlign: "center",
             }}>
               <p style={{ fontSize: "13px", fontWeight: 700, color: c.amber, margin: "0 0 2px" }}>
-                {roundLabel(activeRound.roundNumber, pool.totalRounds)} Picks Locked
+                {roundLabel(activeRound.roundNumber, pool.totalRounds, pool.poolType)} Picks Locked
               </p>
               <p style={{ fontSize: "12px", color: c.amber, margin: 0 }}>Awaiting results</p>
             </div>
@@ -150,7 +151,7 @@ export default function PoolViewClient({
                 <div style={{ flexShrink: 0 }}>
                   <p style={{ fontSize: "12px", color: c.gray, margin: "0 0 2px", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>Current Round</p>
                   <p style={{ fontSize: "16px", fontWeight: 700, color: c.charcoal, margin: 0, whiteSpace: "nowrap" }}>
-                    {roundLabel(activeRound.roundNumber, pool.totalRounds)}
+                    {roundLabel(activeRound.roundNumber, pool.totalRounds, pool.poolType)}
                   </p>
                 </div>
               )}
@@ -198,7 +199,7 @@ export default function PoolViewClient({
         {rounds.length > 0 && (
           <div style={{ marginBottom: "28px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px" }}>
-              <p style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal, margin: 0 }}>Rounds &amp; Lock Dates</p>
+              <p style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal, margin: 0 }}>{pool.poolType === "daily" ? "Days & Deadlines" : "Rounds & Lock Dates"}</p>
               <p style={{ fontSize: "11px", color: c.gray, margin: 0 }}>Dates may shift based on match times</p>
             </div>
             <div style={{ backgroundColor: c.white, borderRadius: "12px", border: `1px solid ${c.grayLight}`, overflow: "hidden" }}>
@@ -222,7 +223,7 @@ export default function PoolViewClient({
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <span style={{ fontSize: "13px", fontWeight: isActive ? 700 : 500, color: isDone ? c.gray : isActive ? c.green : c.charcoal }}>
-                          {roundLabel(r.roundNumber, pool.totalRounds)}
+                          {roundLabel(r.roundNumber, pool.totalRounds, pool.poolType)}
                         </span>
                         {isActive && (
                           <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "5px", backgroundColor: c.green, color: c.white }}>Active</span>
