@@ -784,7 +784,7 @@ function ManageTournament({
 
   // Sync state
   const [sfSyncing, setSfSyncing] = useState(false);
-  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number } | null>(null);
+  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[] } | null>(null);
   const [sfError, setSfError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
@@ -1299,6 +1299,12 @@ function ManageTournament({
                 <div style={{ fontSize: "13px" }}>
                   <span style={{ color: c.green, fontWeight: 600 }}>✓ {sfResult.synced} results synced</span>
                   {sfResult.skipped > 0 && <span style={{ color: c.gray, marginLeft: "10px" }}>{sfResult.skipped} already recorded</span>}
+                  {sfResult.needsManual.length > 0 && (
+                    <div style={{ marginTop: "6px", color: "#D97706" }}>
+                      ⚠ Needs manual entry ({sfResult.needsManual.length}): {sfResult.needsManual.join(", ")}
+                      <span style={{ color: c.gray, marginLeft: "6px" }}>— walkover or retirement, enter result above</span>
+                    </div>
+                  )}
                   {sfResult.unmatched.length > 0 && (
                     <div style={{ marginTop: "6px", color: "#D97706" }}>
                       ⚠ Unmatched ({sfResult.unmatched.length}): {sfResult.unmatched.join(", ")}

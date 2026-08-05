@@ -820,25 +820,25 @@ export async function syncRoundFromOddsApi(
   roundNumber: number,
   tournamentId: string,
   sportKey: string
-): Promise<{ synced: number; unmatched: string[]; skipped: number; error?: string }> {
+): Promise<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[]; error?: string }> {
   const userId = await getAdminUserId();
-  if (!userId) return { synced: 0, unmatched: [], skipped: 0, error: "Not authenticated." };
+  if (!userId) return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: "Not authenticated." };
 
   const apiKey = process.env.ODDS_API_KEY;
-  if (!apiKey) return { synced: 0, unmatched: [], skipped: 0, error: "ODDS_API_KEY not configured." };
+  if (!apiKey) return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: "ODDS_API_KEY not configured." };
 
   const res = await fetch(
     `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${apiKey}&daysFrom=3`
   );
   if (!res.ok) {
-    return { synced: 0, unmatched: [], skipped: 0, error: `Odds API returned ${res.status}` };
+    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: `Odds API returned ${res.status}` };
   }
 
   const events: any[] = await res.json();
   const completed = events.filter(e => e.completed === true);
 
   if (!completed.length) {
-    return { synced: 0, unmatched: [], skipped: 0, error: "No completed matches found in the last 3 days." };
+    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: "No completed matches found in the last 3 days." };
   }
 
   const admin = db();
@@ -859,6 +859,7 @@ export async function syncRoundFromOddsApi(
   let synced = 0;
   let skipped = 0;
   const unmatched: string[] = [];
+  const needsManual: string[] = [];
 
   for (const event of completed) {
     const scores: Array<{ name: string; score: string }> = event.scores ?? [];
@@ -866,7 +867,17 @@ export async function syncRoundFromOddsApi(
     const [a, b] = scores;
     const aScore = parseFloat(a.score ?? "0");
     const bScore = parseFloat(b.score ?? "0");
-    if (aScore === bScore) continue;
+
+    // Tied score = walkover or retirement — can't determine winner automatically
+    if (aScore === bScore) {
+      const nameA = findAthlete(a.name) ? a.name : null;
+      const nameB = findAthlete(b.name) ? b.name : null;
+      const bothKnown = nameA && nameB;
+      const neitherRecorded = !existingAthleteIds.has(findAthlete(a.name)?.id ?? "") &&
+                              !existingAthleteIds.has(findAthlete(b.name)?.id ?? "");
+      if (bothKnown && neitherRecorded) needsManual.push(`${a.name} vs ${b.name}`);
+      continue;
+    }
 
     const winnerName = aScore > bScore ? a.name : b.name;
     const loserName = aScore > bScore ? b.name : a.name;
@@ -885,5 +896,5 @@ export async function syncRoundFromOddsApi(
     }
   }
 
-  return { synced, unmatched: Array.from(new Set(unmatched)), skipped };
+  return { synced, unmatched: Array.from(new Set(unmatched)), skipped, needsManual: Array.from(new Set(needsManual)) };
 }
