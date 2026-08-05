@@ -33,7 +33,7 @@ export default async function TournamentSetupPage({
     const [{ data: t }, { data: r }, { data: a }] = await Promise.all([
       adminClient.from("tournaments").select("*").eq("id", searchParams.id).single(),
       adminClient.from("rounds").select("*").eq("tournament_id", searchParams.id).order("round_number"),
-      adminClient.from("athletes").select("*").eq("tournament_id", searchParams.id).order("seed"),
+      adminClient.from("athletes").select("*").eq("tournament_id", searchParams.id).neq("status", "inactive").order("seed"),
     ]);
     tournament = t;
     rounds = r ?? [];
