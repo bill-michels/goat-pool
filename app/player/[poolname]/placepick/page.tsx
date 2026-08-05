@@ -98,7 +98,13 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       : Promise.resolve({ data: null }),
   ]);
 
-  const winnerIds = prevRoundWinners ? new Set(prevRoundWinners.map((r: any) => r.athlete_id)) : null;
+  // Include bye athletes in Round 2 — they advanced without a Round 1 result
+  const byeAthleteIds = activeRound.round_number === 2
+    ? new Set((athletes ?? []).filter((a: any) => a.has_bye).map((a: any) => a.id))
+    : new Set<string>();
+  const winnerIds = prevRoundWinners
+    ? new Set([...prevRoundWinners.map((r: any) => r.athlete_id as string), ...Array.from(byeAthleteIds)])
+    : null;
 
   // For daily pools: fetch today's scheduled athletes from the Odds API
   let todayAthleteNames: Set<string> | null = null;
