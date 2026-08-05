@@ -536,12 +536,12 @@ function AddAthletes({
     const existing = athletes.filter((a) => a.id);
     const newAthletes = athletes.filter((a) => !a.id);
 
-    // Delete athletes that were in the initial list but removed by the user
+    // Soft-delete removed athletes by setting status = 'inactive'
     const removedIds = initialAthletes
       .filter((a) => a.id && !athletes.some((curr) => curr.id === a.id))
       .map((a) => a.id);
     if (removedIds.length > 0) {
-      const { error: err } = await supabase.from("athletes").delete().in("id", removedIds);
+      const { error: err } = await supabase.from("athletes").update({ status: "inactive" }).in("id", removedIds);
       if (err) { setError(err.message); setSaving(false); return; }
     }
 
@@ -805,6 +805,7 @@ function ManageTournament({
   // Round N: athletes with a confirmed win in round N-1, plus bye athletes advancing to round 2
   const activeAthletes = athletes.filter((a) => {
     if (!a.id) return false;
+    if (a.status === "inactive") return false;
     if (activeRound === 1) return !a.has_bye;
     if (activeRound === 2 && a.has_bye) return true;
     return prevRoundResults[a.id] === "win";
