@@ -581,6 +581,7 @@ function AddAthletes({
   };
 
   const seededCount = athletes.filter((a) => a.seed !== null).length;
+  const byeCount = athletes.filter((a) => a.has_bye).length;
 
   return (
     <div style={{ maxWidth: "740px", margin: "0 auto", padding: "40px" }}>
@@ -641,7 +642,7 @@ function AddAthletes({
       {athletes.length > 0 && (
         <>
           <p style={{ fontSize: "15px", fontWeight: 700, color: c.charcoal, margin: "0 0 12px" }}>
-            Total: {athletes.length} — Seeded: {seededCount} — Unseeded: {athletes.length - seededCount}
+            Total: {athletes.length} — Seeded: {seededCount} — Unseeded: {athletes.length - seededCount} — Byes: {byeCount}
           </p>
           <div style={{ backgroundColor: c.white, borderRadius: "14px", overflow: "hidden", border: `1px solid ${c.grayLight}`, marginBottom: "16px" }}>
             <div style={{
