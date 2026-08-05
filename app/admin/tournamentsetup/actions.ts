@@ -843,9 +843,36 @@ export async function syncRoundFromOddsApi(
 
   const admin = db();
 
-  const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId);
+  // Only match against active athletes — eliminated athletes cannot participate in future rounds
+  const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId).eq("status", "active");
   const { data: existingResults } = await admin.from("athlete_results").select("athlete_id").eq("round_id", roundId);
   const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
+
+  // For rounds beyond the first, only record results for athletes who actually advanced.
+  // This prevents Round 1 events (still in the daysFrom window) from being applied to Round 2.
+  let eligibleAthleteIds: Set<string> | null = null;
+  if (roundNumber > 1) {
+    const { data: prevRound } = await admin
+      .from("rounds")
+      .select("id")
+      .eq("tournament_id", tournamentId)
+      .eq("round_number", roundNumber - 1)
+      .maybeSingle();
+
+    const [{ data: prevWinners }, { data: byeAthletes }] = await Promise.all([
+      prevRound
+        ? admin.from("athlete_results").select("athlete_id").eq("round_id", prevRound.id).eq("result", "win")
+        : Promise.resolve({ data: [] as any[] }),
+      roundNumber === 2
+        ? admin.from("athletes").select("id").eq("tournament_id", tournamentId).eq("has_bye", true)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    eligibleAthleteIds = new Set([
+      ...(prevWinners ?? []).map((r: any) => r.athlete_id as string),
+      ...(byeAthletes ?? []).map((a: any) => a.id as string),
+    ]);
+  }
 
   const norm = (s: string) => s.toLowerCase().trim();
   const last = (s: string) => norm(s).split(" ").slice(-1)[0];
@@ -884,6 +911,12 @@ export async function syncRoundFromOddsApi(
 
     const winnerAthlete = findAthlete(winnerName);
     const loserAthlete = findAthlete(loserName);
+
+    // Skip the entire match if either athlete isn't eligible for this round
+    if (eligibleAthleteIds) {
+      if (!winnerAthlete || !loserAthlete) continue;
+      if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
+    }
 
     for (const [sfName, athlete, result] of [
       [winnerName, winnerAthlete, "win"],

@@ -36,13 +36,17 @@ async function syncTournament(
   tournament: { id: string; name: string; odds_api_sport_key: string },
   daysFrom: number = 3
 ): Promise<{ synced: number; tournamentName: string }> {
-  const { data: rounds } = await admin
+  const { data: allRounds } = await admin
     .from("rounds")
     .select("id, round_number, status")
     .eq("tournament_id", tournament.id)
-    .eq("status", "active");
+    .order("round_number");
 
-  if (!rounds?.length) return { synced: 0, tournamentName: tournament.name };
+  const rounds = (allRounds ?? []).filter(r => r.status === "active");
+  if (!rounds.length) return { synced: 0, tournamentName: tournament.name };
+
+  // Lookup by round_number for eligibility checks
+  const roundByNumber = new Map((allRounds ?? []).map(r => [r.round_number, r]));
 
   const { data: athletes } = await admin
     .from("athletes")
@@ -73,6 +77,25 @@ async function syncTournament(
       .eq("round_id", round.id);
     const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
 
+    // For rounds beyond the first, only record results for athletes who advanced to this round.
+    // This prevents Round 1 events from being applied to Round 2 when both players are still active.
+    let eligibleAthleteIds: Set<string> | null = null;
+    if (round.round_number > 1) {
+      const prevRound = roundByNumber.get(round.round_number - 1);
+      const [{ data: prevWinners }, { data: byeAthletes }] = await Promise.all([
+        prevRound
+          ? admin.from("athlete_results").select("athlete_id").eq("round_id", prevRound.id).eq("result", "win")
+          : Promise.resolve({ data: [] as any[] }),
+        round.round_number === 2
+          ? admin.from("athletes").select("id").eq("tournament_id", tournament.id).eq("has_bye", true)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+      eligibleAthleteIds = new Set([
+        ...(prevWinners ?? []).map((r: any) => r.athlete_id as string),
+        ...(byeAthletes ?? []).map((a: any) => a.id as string),
+      ]);
+    }
+
     for (const event of events) {
       const wl = getWinnerLoser(event);
       if (!wl) continue;
@@ -80,6 +103,7 @@ async function syncTournament(
       const winnerAthlete = findAthlete(wl.winnerName);
       const loserAthlete = findAthlete(wl.loserName);
       if (!winnerAthlete || !loserAthlete) continue;
+      if (eligibleAthleteIds && (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id))) continue;
       if (existingAthleteIds.has(winnerAthlete.id) && existingAthleteIds.has(loserAthlete.id)) continue;
 
       for (const [athleteId, result] of [[winnerAthlete.id, "win"], [loserAthlete.id, "loss"]] as const) {
