@@ -820,25 +820,25 @@ export async function syncRoundFromOddsApi(
   roundNumber: number,
   tournamentId: string,
   sportKey: string
-): Promise<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[]; error?: string }> {
+): Promise<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[]; blockedByEligibility: string[]; error?: string }> {
   const userId = await getAdminUserId();
-  if (!userId) return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: "Not authenticated." };
+  if (!userId) return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: "Not authenticated." };
 
   const apiKey = process.env.ODDS_API_KEY;
-  if (!apiKey) return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: "ODDS_API_KEY not configured." };
+  if (!apiKey) return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: "ODDS_API_KEY not configured." };
 
   const res = await fetch(
     `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${apiKey}&daysFrom=3`
   );
   if (!res.ok) {
-    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: `Odds API returned ${res.status}` };
+    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: `Odds API returned ${res.status}` };
   }
 
   const events: any[] = await res.json();
   const completed = events.filter(e => e.completed === true);
 
   if (!completed.length) {
-    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], error: "No completed matches found in the last 3 days." };
+    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: "No completed matches found in the last 3 days." };
   }
 
   const admin = db();
@@ -887,6 +887,7 @@ export async function syncRoundFromOddsApi(
   let skipped = 0;
   const unmatched: string[] = [];
   const needsManual: string[] = [];
+  const blockedByEligibility: string[] = [];
 
   for (const event of completed) {
     const scores: Array<{ name: string; score: string }> = event.scores ?? [];
@@ -912,10 +913,14 @@ export async function syncRoundFromOddsApi(
     const winnerAthlete = findAthlete(winnerName);
     const loserAthlete = findAthlete(loserName);
 
-    // Skip the entire match if either athlete isn't eligible for this round
+    // Skip the entire match if either athlete isn't eligible for this round.
+    // Track these as "blocked" so the admin can see which matches were found but filtered.
     if (eligibleAthleteIds) {
       if (!winnerAthlete || !loserAthlete) continue;
-      if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
+      if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) {
+        blockedByEligibility.push(`${winnerName} def. ${loserName}`);
+        continue;
+      }
     }
 
     for (const [sfName, athlete, result] of [
@@ -929,5 +934,5 @@ export async function syncRoundFromOddsApi(
     }
   }
 
-  return { synced, unmatched: Array.from(new Set(unmatched)), skipped, needsManual: Array.from(new Set(needsManual)) };
+  return { synced, unmatched: Array.from(new Set(unmatched)), skipped, needsManual: Array.from(new Set(needsManual)), blockedByEligibility: Array.from(new Set(blockedByEligibility)) };
 }

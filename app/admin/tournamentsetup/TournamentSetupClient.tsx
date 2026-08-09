@@ -785,7 +785,7 @@ function ManageTournament({
 
   // Sync state
   const [sfSyncing, setSfSyncing] = useState(false);
-  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[] } | null>(null);
+  const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[]; blockedByEligibility: string[] } | null>(null);
   const [sfError, setSfError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
@@ -1311,6 +1311,12 @@ function ManageTournament({
                     <div style={{ marginTop: "6px", color: "#D97706" }}>
                       ⚠ Unmatched ({sfResult.unmatched.length}): {sfResult.unmatched.join(", ")}
                       <span style={{ color: c.gray, marginLeft: "6px" }}>— check athlete name spelling</span>
+                    </div>
+                  )}
+                  {sfResult.blockedByEligibility?.length > 0 && (
+                    <div style={{ marginTop: "6px", color: "#D97706" }}>
+                      ⚠ Blocked — not eligible for this round ({sfResult.blockedByEligibility.length}): {sfResult.blockedByEligibility.join(", ")}
+                      <span style={{ color: c.gray, marginLeft: "6px" }}>— these athletes may be missing a previous-round win. Enter it manually, then re-sync.</span>
                     </div>
                   )}
                 </div>
