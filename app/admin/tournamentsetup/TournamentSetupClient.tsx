@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -925,6 +925,21 @@ function ManageTournament({
           }}>
             Edit Athletes
           </button>
+          {tournament.status === "upcoming" && (
+            <button
+              onClick={async () => {
+                await markTournamentLive(tournament.id);
+                router.refresh();
+              }}
+              style={{
+                padding: "10px 20px", borderRadius: "10px",
+                border: `1.5px solid ${c.amber}`, background: c.amberMuted,
+                color: c.amber, fontSize: "14px", fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              Mark as Live
+            </button>
+          )}
           {tournament.status !== "concluded" && (
             <button
               onClick={async () => {

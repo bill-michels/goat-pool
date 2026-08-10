@@ -269,6 +269,20 @@ export async function concludeTournamentPools(
     .in("status", ["active", "open"]);
 }
 
+export async function markTournamentLive(
+  tournamentId: string
+): Promise<{ error?: string }> {
+  const userId = await getAdminUserId();
+  if (!userId) return { error: "Not authenticated." };
+  const admin = db();
+  const { error } = await admin
+    .from("tournaments")
+    .update({ status: "active" })
+    .eq("id", tournamentId)
+    .eq("status", "upcoming");
+  return error ? { error: error.message } : {};
+}
+
 export async function concludeTournament(
   tournamentId: string
 ): Promise<{ error?: string }> {
