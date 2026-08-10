@@ -893,17 +893,25 @@ export async function syncRoundFromOddsApi(
     const scores: Array<{ name: string; score: string }> = event.scores ?? [];
     if (scores.length !== 2) continue;
     const [a, b] = scores;
-    const aScore = parseFloat(a.score ?? "0");
-    const bScore = parseFloat(b.score ?? "0");
 
-    // Tied score = walkover or retirement — can't determine winner automatically
+    // Null/missing scores mean the API has no score data for this match — skip silently
+    if (a.score == null || b.score == null) continue;
+
+    const aScore = parseFloat(a.score);
+    const bScore = parseFloat(b.score);
+
+    // NaN scores (malformed data) — skip silently
+    if (isNaN(aScore) || isNaN(bScore)) continue;
+
+    // Equal scores = likely walkover or retirement (can't determine winner automatically).
+    // Show the actual API scores so the cause is visible.
     if (aScore === bScore) {
       const nameA = findAthlete(a.name) ? a.name : null;
       const nameB = findAthlete(b.name) ? b.name : null;
       const bothKnown = nameA && nameB;
       const neitherRecorded = !existingAthleteIds.has(findAthlete(a.name)?.id ?? "") &&
                               !existingAthleteIds.has(findAthlete(b.name)?.id ?? "");
-      if (bothKnown && neitherRecorded) needsManual.push(`${a.name} vs ${b.name}`);
+      if (bothKnown && neitherRecorded) needsManual.push(`${a.name} vs ${b.name} (API scores: ${a.score}-${b.score})`);
       continue;
     }
 
