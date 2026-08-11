@@ -45,6 +45,9 @@ async function syncTournament(
   const rounds = (allRounds ?? []).filter(r => r.status === "active");
   if (!rounds.length) return { synced: 0, tournamentName: tournament.name };
 
+  // Flip tournament to active if it's still upcoming
+  await admin.from("tournaments").update({ status: "active" }).eq("id", tournament.id).eq("status", "upcoming");
+
   // Lookup by round_number for eligibility checks
   const roundByNumber = new Map((allRounds ?? []).map(r => [r.round_number, r]));
 

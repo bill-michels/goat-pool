@@ -131,6 +131,10 @@ export async function processAthleteResult(
   );
   if (resErr) return { error: resErr.message };
 
+  // Flip tournament to active if it's still upcoming
+  const { data: round } = await admin.from("rounds").select("tournament_id").eq("id", roundId).single();
+  if (round) await ensureTournamentActive(admin, round.tournament_id);
+
   // 2. Mark athlete eliminated if loss
   if (result === "loss") {
     await admin.from("athletes")
@@ -269,18 +273,22 @@ export async function concludeTournamentPools(
     .in("status", ["active", "open"]);
 }
 
+async function ensureTournamentActive(admin: ReturnType<typeof db>, tournamentId: string) {
+  await admin
+    .from("tournaments")
+    .update({ status: "active" })
+    .eq("id", tournamentId)
+    .eq("status", "upcoming");
+}
+
 export async function markTournamentLive(
   tournamentId: string
 ): Promise<{ error?: string }> {
   const userId = await getAdminUserId();
   if (!userId) return { error: "Not authenticated." };
   const admin = db();
-  const { error } = await admin
-    .from("tournaments")
-    .update({ status: "active" })
-    .eq("id", tournamentId)
-    .eq("status", "upcoming");
-  return error ? { error: error.message } : {};
+  await ensureTournamentActive(admin, tournamentId);
+  return {};
 }
 
 export async function concludeTournament(
@@ -856,6 +864,9 @@ export async function syncRoundFromOddsApi(
   }
 
   const admin = db();
+
+  // Flip tournament to active if it's still upcoming
+  await ensureTournamentActive(admin, tournamentId);
 
   // Only match against active athletes — eliminated athletes cannot participate in future rounds
   const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId).eq("status", "active");
