@@ -787,6 +787,7 @@ function ManageTournament({
   const [sfSyncing, setSfSyncing] = useState(false);
   const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[]; blockedByEligibility: string[] } | null>(null);
   const [sfError, setSfError] = useState<string | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
   const [savingDeadline, setSavingDeadline] = useState(false);
@@ -848,7 +849,7 @@ function ManageTournament({
     }
 
     return () => { void currentQuery; };
-  }, [activeRound]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeRound, dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelect = (athleteId: string, result: "win" | "loss") => {
     // If already saved as this result, do nothing
@@ -1347,7 +1348,7 @@ function ManageTournament({
                 setSfResult(null);
                 const res = await syncRoundFromOddsApi(activeRoundData.id, activeRound, tournament.id, sportKey);
                 if (res.error) setSfError(res.error);
-                else { setSfResult(res); if (res.synced > 0) router.refresh(); }
+                else { setSfResult(res); if (res.synced > 0) setDataVersion(v => v + 1); }
                 setSfSyncing(false);
               }}
               disabled={sfSyncing}
