@@ -200,6 +200,7 @@ export default function ManagePoolClient({
   const [inviteSuccess, setInviteSuccess] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resentId, setResentId] = useState<string | null>(null);
+  const [resentError, setResentError] = useState<string | null>(null);
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutError, setPayoutError] = useState<string | null>(null);
   const [payoutDone, setPayoutDone] = useState(false);
@@ -882,6 +883,11 @@ export default function ManagePoolClient({
               border: `1px solid ${c.grayLight}`,
             }}
           >
+            {resentError && (
+              <div style={{ padding: "12px 20px", backgroundColor: "#FEF2F2", borderBottom: `1px solid ${c.grayLight}` }}>
+                <p style={{ fontSize: "13px", color: "#EF4444", margin: 0 }}>Resend failed: {resentError}</p>
+              </div>
+            )}
             {invites.length === 0 ? (
               <div
                 style={{
@@ -961,10 +967,15 @@ export default function ManagePoolClient({
                             disabled={isResending}
                             onClick={async () => {
                               setResendingId(inv.id);
-                              await resendInvite(inv.id);
+                              setResentError(null);
+                              const result = await resendInvite(inv.id);
                               setResendingId(null);
-                              setResentId(inv.id);
-                              setTimeout(() => setResentId(null), 2000);
+                              if (result.error) {
+                                setResentError(result.error);
+                              } else {
+                                setResentId(inv.id);
+                                setTimeout(() => setResentId(null), 2000);
+                              }
                             }}
                             style={{
                               fontSize: "12px",
