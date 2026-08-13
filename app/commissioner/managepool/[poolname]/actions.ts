@@ -36,7 +36,7 @@ export async function sendInvites(
   if (error) return { error: error.message };
 
   const base = appUrl();
-  await Promise.allSettled(
+  const emailResults = await Promise.allSettled(
     (data ?? []).map((invite) =>
       resend.emails.send({
         from: FROM,
@@ -52,6 +52,11 @@ export async function sendInvites(
       })
     )
   );
+
+  const firstFailure = emailResults.find(r => r.status === "rejected") as PromiseRejectedResult | undefined;
+  const firstError = emailResults.find(r => r.status === "fulfilled" && (r as PromiseFulfilledResult<any>).value?.error) as PromiseFulfilledResult<any> | undefined;
+  if (firstFailure) return { error: `Email send failed: ${firstFailure.reason?.message ?? String(firstFailure.reason)}` };
+  if (firstError) return { error: `Email send failed: ${firstError.value.error?.message ?? JSON.stringify(firstError.value.error)}` };
 
   return {
     data: (data ?? []).map(({ id, email, status, sent_at }) => ({ id, email, status, sent_at })),
