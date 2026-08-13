@@ -860,7 +860,11 @@ export async function syncRoundFromOddsApi(
   const completed = events.filter(e => e.completed === true);
 
   if (!completed.length) {
-    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: "No completed matches found in the last 3 days." };
+    const inProgress = events.filter(e => e.completed === false).length;
+    const detail = events.length === 0
+      ? "Odds API returned 0 events — sport key may be wrong or tournament not yet listed."
+      : `Odds API returned ${events.length} events (${inProgress} in progress, 0 completed) — scores may not be finalised yet.`;
+    return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: detail };
   }
 
   const admin = db();
