@@ -131,9 +131,17 @@ export async function processAthleteResult(
   );
   if (resErr) return { error: resErr.message };
 
-  // Flip tournament to active if it's still upcoming
-  const { data: round } = await admin.from("rounds").select("tournament_id").eq("id", roundId).single();
-  if (round) await ensureTournamentActive(admin, round.tournament_id);
+  // Flip tournament to active if it's still upcoming; auto-open the next round for picks
+  const { data: round } = await admin.from("rounds").select("tournament_id, round_number").eq("id", roundId).single();
+  if (round) {
+    await ensureTournamentActive(admin, round.tournament_id);
+    await admin
+      .from("rounds")
+      .update({ status: "active" })
+      .eq("tournament_id", round.tournament_id)
+      .eq("round_number", round.round_number + 1)
+      .eq("status", "upcoming");
+  }
 
   // 2. Mark athlete eliminated if loss
   if (result === "loss") {

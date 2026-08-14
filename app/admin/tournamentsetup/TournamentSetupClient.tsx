@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive } from "./actions";
+import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, processSofascoreEvents } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -736,6 +736,28 @@ function AddAthletes({
   );
 }
 
+async function fetchSofaEvents(tId: string, sId: string): Promise<any[]> {
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Referer": "https://www.sofascore.com/",
+  };
+  const out: any[] = [];
+  for (let i = 0; i < 6; i++) {
+    try {
+      const res = await fetch(
+        `https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${sId}/events/last/${i}`,
+        { headers }
+      );
+      if (!res.ok) break;
+      const json = await res.json();
+      if (Array.isArray(json.events)) out.push(...json.events);
+      else break;
+    } catch { break; }
+  }
+  return out;
+}
+
 // ── View 3: Manage Tournament ──────────────────────────────────────────────
 
 function ManageTournament({
@@ -772,7 +794,6 @@ function ManageTournament({
   const [undoingId, setUndoingId] = useState<string | null>(null);
   const [assigningPicks, setAssigningPicks] = useState(false);
   const [assignedCount, setAssignedCount] = useState<number | null>(null);
-  const [openingNextRound, setOpeningNextRound] = useState(false);
   const [completingRound, setCompletingRound] = useState(false);
   const [concluding, setConcluding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -783,11 +804,34 @@ function ManageTournament({
   const [oddsKeySaving, setOddsKeySaving] = useState(false);
   const [oddsKeySaved, setOddsKeySaved] = useState(false);
 
-  // Sync state
+  // Odds API sync state
   const [sfSyncing, setSfSyncing] = useState(false);
   const [sfResult, setSfResult] = useState<{ synced: number; unmatched: string[]; skipped: number; needsManual: string[]; blockedByEligibility: string[] } | null>(null);
   const [sfError, setSfError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
+
+  // Sofascore connection — local overrides applied after saving without a page reload
+  const [sofaTIdOverride, setSofaTIdOverride] = useState<string | null>(null);
+  const [sofaSIdOverride, setSofaSIdOverride] = useState<string | null>(null);
+  const [sofaNameOverride, setSofaNameOverride] = useState<string | null>(null);
+  const sofaTId: string | null = sofaTIdOverride ?? (tournament as any).sofascore_tournament_id ?? null;
+  const sofaSId: string | null = sofaSIdOverride ?? (tournament as any).sofascore_season_id ?? null;
+
+  // Sofascore connection UI
+  const [sofaExpanded, setSofaExpanded] = useState(false);
+  const [sofaSearchQuery, setSofaSearchQuery] = useState("");
+  const [sofaSearchResults, setSofaSearchResults] = useState<Array<{ id: number; name: string; category: string }>>([]);
+  const [sofaSearching, setSofaSearching] = useState(false);
+  const [sofaSearchError, setSofaSearchError] = useState<string | null>(null);
+  const [sofaPickedTournament, setSofaPickedTournament] = useState<{ id: number; name: string } | null>(null);
+  const [sofaSeasons, setSofaSeasons] = useState<Array<{ id: number; name: string }>>([]);
+  const [sofaPickedSeason, setSofaPickedSeason] = useState<{ id: number; name: string } | null>(null);
+  const [sofaSavingConn, setSofaSavingConn] = useState(false);
+
+  // Sofascore sync state
+  const [sofaSyncing, setSofaSyncing] = useState(false);
+  const [sofaResult, setSofaResult] = useState<{ synced: number; unmatched: string[]; skipped: number; sofascoreRoundName?: string } | null>(null);
+  const [sofaError, setSofaError] = useState<string | null>(null);
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
   const [savingDeadline, setSavingDeadline] = useState(false);
@@ -823,6 +867,8 @@ function ManageTournament({
     setEditingResultIds(new Set());
     setSfResult(null);
     setSfError(null);
+    setSofaResult(null);
+    setSofaError(null);
 
     const prevRoundData = rounds.find((r) => r.round_number === activeRound - 1);
 
@@ -850,6 +896,63 @@ function ManageTournament({
 
     return () => { void currentQuery; };
   }, [activeRound, dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSofaSearch = async () => {
+    if (!sofaSearchQuery.trim()) return;
+    setSofaSearching(true);
+    setSofaSearchError(null);
+    setSofaSearchResults([]);
+    setSofaPickedTournament(null);
+    setSofaSeasons([]);
+    setSofaPickedSeason(null);
+    const { results, error } = await searchSofascoreTournaments(sofaSearchQuery);
+    setSofaSearchResults(results);
+    if (error) setSofaSearchError(error);
+    setSofaSearching(false);
+  };
+
+  const handleSofaPick = async (t: { id: number; name: string }) => {
+    setSofaPickedTournament(t);
+    setSofaPickedSeason(null);
+    setSofaSeasons([]);
+    const { seasons } = await fetchSofascoreSeasonsForTournament(String(t.id));
+    setSofaSeasons(seasons);
+  };
+
+  const handleSofaSaveConnection = async () => {
+    if (!sofaPickedTournament || !sofaPickedSeason) return;
+    setSofaSavingConn(true);
+    const { error } = await saveSofascoreConnection(tournament.id, String(sofaPickedTournament.id), String(sofaPickedSeason.id));
+    if (!error) {
+      setSofaTIdOverride(String(sofaPickedTournament.id));
+      setSofaSIdOverride(String(sofaPickedSeason.id));
+      setSofaNameOverride(sofaPickedTournament.name);
+      setSofaExpanded(false);
+      setSofaPickedTournament(null);
+      setSofaPickedSeason(null);
+      setSofaSeasons([]);
+      setSofaSearchResults([]);
+      setSofaSearchQuery("");
+    }
+    setSofaSavingConn(false);
+  };
+
+  const handleSofaSync = async () => {
+    if (!activeRoundData || !sofaTId || !sofaSId) return;
+    setSofaSyncing(true);
+    setSofaError(null);
+    setSofaResult(null);
+    const events = await fetchSofaEvents(sofaTId, sofaSId);
+    if (!events.length) {
+      setSofaError("Could not fetch events from Sofascore — the API may be temporarily blocked or the IDs are wrong.");
+      setSofaSyncing(false);
+      return;
+    }
+    const res = await processSofascoreEvents(activeRoundData.id, activeRound, tournament.id, events);
+    if (res.error) setSofaError(res.error);
+    else { setSofaResult(res); if (res.synced > 0) setDataVersion(v => v + 1); }
+    setSofaSyncing(false);
+  };
 
   const handleSelect = (athleteId: string, result: "win" | "loss") => {
     // If already saved as this result, do nothing
@@ -1227,33 +1330,6 @@ function ManageTournament({
             >
               {assigningPicks ? "Assigning..." : "Auto-Assign Missed Picks"}
             </button>
-            {(() => {
-              const nextRound = rounds.find(r => r.round_number === activeRound + 1);
-              const nextRoundAlreadyOpen = nextRound?.status === "active";
-              if (!nextRound || activeRoundData?.status === "completed") return null;
-              return (
-                <button
-                  onClick={async () => {
-                    if (!nextRound || nextRoundAlreadyOpen) return;
-                    setOpeningNextRound(true);
-                    await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-                    await supabase.from("tournaments").update({ status: "active" }).eq("id", tournament.id).neq("status", "concluded");
-                    setOpeningNextRound(false);
-                    router.refresh();
-                  }}
-                  disabled={openingNextRound || nextRoundAlreadyOpen}
-                  style={{
-                    padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                    border: `1px solid ${c.grayLight}`, background: nextRoundAlreadyOpen ? c.greenMuted : c.white,
-                    color: nextRoundAlreadyOpen ? c.green : c.charcoal,
-                    cursor: openingNextRound || nextRoundAlreadyOpen ? "not-allowed" : "pointer",
-                    whiteSpace: "nowrap" as const,
-                  }}
-                >
-                  {nextRoundAlreadyOpen ? `Round ${activeRound + 1} Open` : openingNextRound ? "Opening..." : `Open Round ${activeRound + 1} for Picks`}
-                </button>
-              );
-            })()}
             {activeRoundData?.status === "active" && activeAthletes.length > 0 && (() => {
               const allSaved = savedCount === activeAthletes.length;
               const isDisabled = completingRound || !allSaved;
@@ -1365,6 +1441,142 @@ function ManageTournament({
             </button>
           </div>
         )}
+
+        {/* Sofascore Sync */}
+        <div style={{
+          backgroundColor: c.white, borderRadius: "14px", padding: "18px 22px",
+          border: `1px solid ${c.grayLight}`, marginBottom: "20px",
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" as const }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: "14px", fontWeight: 700, color: c.charcoal, margin: "0 0 2px" }}>Sofascore Sync</p>
+              <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 6px" }}>
+                {sofaTId
+                  ? <>Connected: <span style={{ color: c.green, fontWeight: 600 }}>{sofaNameOverride ?? (tournament as any).sofascore_tournament_id}</span></>
+                  : "Not connected — connect to enable Sofascore sync."}
+              </p>
+              {sofaError && <p style={{ fontSize: "13px", color: c.red, margin: "0" }}>{sofaError}</p>}
+              {sofaResult && (
+                <div style={{ fontSize: "13px" }}>
+                  <span style={{ color: c.green, fontWeight: 600 }}>✓ {sofaResult.synced} results synced</span>
+                  {sofaResult.skipped > 0 && <span style={{ color: c.gray, marginLeft: "10px" }}>{sofaResult.skipped} already recorded</span>}
+                  {sofaResult.sofascoreRoundName && <span style={{ color: c.gray, marginLeft: "10px" }}>({sofaResult.sofascoreRoundName})</span>}
+                  {sofaResult.unmatched.length > 0 && (
+                    <div style={{ marginTop: "6px", color: "#D97706" }}>
+                      ⚠ Unmatched ({sofaResult.unmatched.length}): {sofaResult.unmatched.join(", ")}
+                      <span style={{ color: c.gray, marginLeft: "6px" }}>— check athlete name spelling</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+              <button
+                onClick={() => setSofaExpanded(e => !e)}
+                style={{
+                  padding: "8px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
+                  border: `1px solid ${c.grayLight}`, background: c.white,
+                  color: c.charcoal, cursor: "pointer", whiteSpace: "nowrap" as const,
+                }}
+              >
+                {sofaExpanded ? "Cancel" : sofaTId ? "Change" : "Connect"}
+              </button>
+              {sofaTId && (
+                <button
+                  onClick={handleSofaSync}
+                  disabled={sofaSyncing}
+                  style={{
+                    padding: "8px 18px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
+                    border: `1px solid ${sofaSyncing ? c.grayLight : "#7C3AED"}`,
+                    background: sofaSyncing ? c.white : "#7C3AED",
+                    color: sofaSyncing ? c.gray : c.white,
+                    cursor: sofaSyncing ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap" as const,
+                  }}
+                >
+                  {sofaSyncing ? "Syncing…" : `Sync Round ${activeRound}`}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {sofaExpanded && (
+            <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: `1px solid ${c.grayLight}` }}>
+              <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                <input
+                  type="text"
+                  placeholder="Search tournament name, e.g. Cincinnati"
+                  value={sofaSearchQuery}
+                  onChange={e => setSofaSearchQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleSofaSearch(); }}
+                  style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, fontSize: "13px" }}
+                />
+                <button
+                  onClick={handleSofaSearch}
+                  disabled={sofaSearching || !sofaSearchQuery.trim()}
+                  style={{
+                    padding: "8px 16px", borderRadius: "8px", border: "none",
+                    background: sofaSearching || !sofaSearchQuery.trim() ? "#9CA3AF" : "#7C3AED",
+                    color: c.white, fontSize: "13px", fontWeight: 600,
+                    cursor: sofaSearching || !sofaSearchQuery.trim() ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {sofaSearching ? "Searching…" : "Search"}
+                </button>
+              </div>
+              {sofaSearchError && <p style={{ fontSize: "13px", color: c.red, margin: "0 0 8px" }}>{sofaSearchError}</p>}
+              {sofaSearchResults.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column" as const, gap: "6px", marginBottom: "10px" }}>
+                  {sofaSearchResults.map(r => (
+                    <button
+                      key={r.id}
+                      onClick={() => handleSofaPick(r)}
+                      style={{
+                        textAlign: "left" as const, padding: "8px 12px", borderRadius: "8px",
+                        border: `1.5px solid ${sofaPickedTournament?.id === r.id ? "#7C3AED" : c.grayLight}`,
+                        background: sofaPickedTournament?.id === r.id ? "#F5F3FF" : c.white,
+                        fontSize: "13px", color: c.charcoal, cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{r.name}</span>
+                      <span style={{ color: c.gray, marginLeft: "8px" }}>{r.category}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {sofaPickedTournament && sofaSeasons.length > 0 && (
+                <div style={{ marginBottom: "10px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: c.gray, display: "block", marginBottom: "6px" }}>Season</label>
+                  <select
+                    value={sofaPickedSeason?.id ?? ""}
+                    onChange={e => {
+                      const s = sofaSeasons.find(s => s.id === parseInt(e.target.value));
+                      setSofaPickedSeason(s ?? null);
+                    }}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${c.grayLight}`, fontSize: "13px" }}
+                  >
+                    <option value="">— select season —</option>
+                    {sofaSeasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {sofaPickedTournament && sofaPickedSeason && (
+                <button
+                  onClick={handleSofaSaveConnection}
+                  disabled={sofaSavingConn}
+                  style={{
+                    padding: "8px 20px", borderRadius: "8px", border: "none",
+                    background: sofaSavingConn ? "#9CA3AF" : "#7C3AED",
+                    color: c.white, fontSize: "13px", fontWeight: 600,
+                    cursor: sofaSavingConn ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {sofaSavingConn ? "Saving…" : "Save Connection"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         <div style={{ borderRadius: "10px", overflow: "hidden", border: `1px solid ${c.grayLight}` }}>
           <div style={{
