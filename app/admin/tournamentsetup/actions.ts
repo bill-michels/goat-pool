@@ -888,8 +888,7 @@ export async function syncRoundFromOddsApi(
   // Flip tournament to active if it's still upcoming
   await ensureTournamentActive(admin, tournamentId);
 
-  // Only match against active athletes — eliminated athletes cannot participate in future rounds
-  const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId).eq("status", "active");
+  const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId).neq("status", "inactive");
   const { data: existingResults } = await admin.from("athlete_results").select("athlete_id").eq("round_id", roundId);
   const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
 

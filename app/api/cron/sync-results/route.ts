@@ -55,7 +55,7 @@ async function syncTournament(
     .from("athletes")
     .select("id, name, status")
     .eq("tournament_id", tournament.id)
-    .eq("status", "active");
+    .neq("status", "inactive");
 
   if (!athletes?.length) return { synced: 0, tournamentName: tournament.name };
 
