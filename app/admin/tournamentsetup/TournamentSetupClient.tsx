@@ -736,18 +736,9 @@ function AddAthletes({
   );
 }
 
-const SF_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "application/json",
-  "Referer": "https://www.sofascore.com/",
-};
-
 async function sofascoreSearchClient(query: string): Promise<Array<{ id: number; name: string; category: string }>> {
   try {
-    const res = await fetch(
-      `https://api.sofascore.com/api/v1/search/all?q=${encodeURIComponent(query)}&page=0`,
-      { headers: SF_HEADERS }
-    );
+    const res = await fetch(`/api/sofascore-proxy?action=search&q=${encodeURIComponent(query)}`);
     if (!res.ok) return [];
     const json = await res.json();
     return (json.results ?? [])
@@ -763,10 +754,7 @@ async function sofascoreSearchClient(query: string): Promise<Array<{ id: number;
 
 async function sofascoreSeasonsClient(tId: number): Promise<Array<{ id: number; name: string }>> {
   try {
-    const res = await fetch(
-      `https://api.sofascore.com/api/v1/unique-tournament/${tId}/seasons`,
-      { headers: SF_HEADERS }
-    );
+    const res = await fetch(`/api/sofascore-proxy?action=seasons&tId=${tId}`);
     if (!res.ok) return [];
     const json = await res.json();
     return (json.seasons ?? []).map((s: any) => ({ id: s.id as number, name: s.name as string })).slice(0, 10);
@@ -777,10 +765,7 @@ async function fetchSofaEvents(tId: string, sId: string): Promise<any[]> {
   const out: any[] = [];
   for (let i = 0; i < 6; i++) {
     try {
-      const res = await fetch(
-        `https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${sId}/events/last/${i}`,
-        { headers: SF_HEADERS }
-      );
+      const res = await fetch(`/api/sofascore-proxy?tId=${tId}&sId=${sId}&page=${i}`);
       if (!res.ok) break;
       const json = await res.json();
       if (Array.isArray(json.events)) out.push(...json.events);
