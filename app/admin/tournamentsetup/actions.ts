@@ -704,7 +704,7 @@ export async function syncRoundResultsFromSofascore(
       .eq("round_id", roundId);
     const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
 
-    const norm = (s: string) => s.toLowerCase().trim();
+    const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
     const last = (s: string) => norm(s).split(" ").slice(-1)[0];
 
     const findAthlete = (sfName: string) => {
@@ -815,7 +815,7 @@ export async function processSofascoreEvents(
   const { data: existingResults } = await admin.from("athlete_results").select("athlete_id").eq("round_id", roundId);
   const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
 
-  const norm = (s: string) => s.toLowerCase().trim();
+  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const last = (s: string) => norm(s).split(" ").slice(-1)[0];
   const findAthlete = (sfName: string) => {
     const n = norm(sfName);
@@ -911,7 +911,7 @@ export async function syncRoundFromOddsApi(
     ]);
   }
 
-  const norm = (s: string) => s.toLowerCase().trim();
+  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const last = (s: string) => norm(s).split(" ").slice(-1)[0];
   const findAthlete = (name: string) => {
     const n = norm(name);

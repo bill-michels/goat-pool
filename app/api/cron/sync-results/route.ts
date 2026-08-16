@@ -62,7 +62,7 @@ async function syncTournament(
   const events = await fetchOddsApiScores(tournament.odds_api_sport_key, daysFrom);
   if (!events.length) return { synced: 0, tournamentName: tournament.name };
 
-  const norm = (s: string) => s.toLowerCase().trim();
+  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const last = (s: string) => norm(s).split(" ").slice(-1)[0];
   const findAthlete = (name: string) => {
     const n = norm(name);
@@ -161,6 +161,76 @@ async function syncTournament(
   return { synced: totalSynced, tournamentName: tournament.name };
 }
 
+async function autoAssignExpiredRounds(admin: ReturnType<typeof db>): Promise<number> {
+  const now = new Date().toISOString();
+  const { data: rounds } = await admin
+    .from("rounds")
+    .select("id, round_number, tournament_id")
+    .eq("status", "active")
+    .lt("lock_deadline", now)
+    .not("lock_deadline", "is", null);
+
+  if (!rounds?.length) return 0;
+  let totalAssigned = 0;
+
+  for (const round of rounds) {
+    const { data: pools } = await admin
+      .from("pools")
+      .select("id, missed_pick_rule")
+      .eq("tournament_id", round.tournament_id)
+      .eq("status", "active");
+    if (!pools?.length) continue;
+
+    const { data: allAthletes } = await admin
+      .from("athletes")
+      .select("id, seed, has_bye")
+      .eq("tournament_id", round.tournament_id)
+      .eq("status", "active")
+      .order("seed", { nullsFirst: false })
+      .order("name");
+    if (!allAthletes?.length) continue;
+
+    for (const pool of pools) {
+      const { data: alivePlayers } = await admin
+        .from("pool_players").select("user_id")
+        .eq("pool_id", pool.id).eq("status", "alive");
+      if (!alivePlayers?.length) continue;
+
+      const { data: existingPicks } = await admin
+        .from("picks").select("user_id, athlete_id")
+        .eq("pool_id", pool.id).eq("round_id", round.id);
+      const pickedUserIds = new Set((existingPicks ?? []).map((p: any) => p.user_id));
+      const missingPlayers = (alivePlayers ?? []).filter((p: any) => !pickedUserIds.has(p.user_id));
+      if (!missingPlayers.length) continue;
+
+      const { data: allPicks } = await admin
+        .from("picks").select("user_id, athlete_id")
+        .eq("pool_id", pool.id).neq("round_id", round.id);
+
+      for (const player of missingPlayers) {
+        const prevIds = new Set(
+          (allPicks ?? []).filter((p: any) => p.user_id === player.user_id).map((p: any) => p.athlete_id)
+        );
+        const available = (allAthletes ?? []).filter((a: any) => {
+          if (prevIds.has(a.id)) return false;
+          if (round.round_number === 1 && a.has_bye) return false;
+          return true;
+        });
+        if (!available.length) continue;
+        const selected = pool.missed_pick_rule === "top_seed"
+          ? available[0]
+          : available[Math.floor(Math.random() * available.length)];
+        const { error } = await admin.from("picks").insert({
+          pool_id: pool.id, round_id: round.id,
+          user_id: player.user_id, athlete_id: selected.id, is_auto_assigned: true,
+        });
+        if (!error) totalAssigned++;
+      }
+    }
+  }
+  return totalAssigned;
+}
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -190,9 +260,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "No active tournaments with Odds API sport key configured." });
   }
 
-  const results = await Promise.allSettled(
-    tournaments.map(t => syncTournament(admin, t as any, dailyTournamentIds.has(t.id) ? 1 : 3))
-  );
+  const [results, autoAssigned] = await Promise.all([
+    Promise.allSettled(
+      tournaments.map(t => syncTournament(admin, t as any, dailyTournamentIds.has(t.id) ? 1 : 3))
+    ),
+    autoAssignExpiredRounds(admin),
+  ]);
 
   const summary = results.map((r, i) =>
     r.status === "fulfilled"
@@ -200,5 +273,5 @@ export async function GET(request: Request) {
       : `Tournament ${i}: error`
   );
 
-  return NextResponse.json({ ok: true, summary });
+  return NextResponse.json({ ok: true, summary, autoAssigned });
 }
