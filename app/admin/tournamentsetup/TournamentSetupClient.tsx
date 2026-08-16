@@ -736,18 +736,50 @@ function AddAthletes({
   );
 }
 
+const SF_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept": "application/json",
+  "Referer": "https://www.sofascore.com/",
+};
+
+async function sofascoreSearchClient(query: string): Promise<Array<{ id: number; name: string; category: string }>> {
+  try {
+    const res = await fetch(
+      `https://api.sofascore.com/api/v1/search/all?q=${encodeURIComponent(query)}&page=0`,
+      { headers: SF_HEADERS }
+    );
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json.results ?? [])
+      .filter((r: any) => r.type === "uniqueTournament")
+      .map((r: any) => ({
+        id: r.entity.id as number,
+        name: r.entity.name as string,
+        category: (r.entity.category?.name ?? "") as string,
+      }))
+      .slice(0, 10);
+  } catch { return []; }
+}
+
+async function sofascoreSeasonsClient(tId: number): Promise<Array<{ id: number; name: string }>> {
+  try {
+    const res = await fetch(
+      `https://api.sofascore.com/api/v1/unique-tournament/${tId}/seasons`,
+      { headers: SF_HEADERS }
+    );
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json.seasons ?? []).map((s: any) => ({ id: s.id as number, name: s.name as string })).slice(0, 10);
+  } catch { return []; }
+}
+
 async function fetchSofaEvents(tId: string, sId: string): Promise<any[]> {
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Referer": "https://www.sofascore.com/",
-  };
   const out: any[] = [];
   for (let i = 0; i < 6; i++) {
     try {
       const res = await fetch(
         `https://api.sofascore.com/api/v1/unique-tournament/${tId}/season/${sId}/events/last/${i}`,
-        { headers }
+        { headers: SF_HEADERS }
       );
       if (!res.ok) break;
       const json = await res.json();
@@ -905,9 +937,9 @@ function ManageTournament({
     setSofaPickedTournament(null);
     setSofaSeasons([]);
     setSofaPickedSeason(null);
-    const { results, error } = await searchSofascoreTournaments(sofaSearchQuery);
+    const results = await sofascoreSearchClient(sofaSearchQuery);
     setSofaSearchResults(results);
-    if (error) setSofaSearchError(error);
+    if (!results.length) setSofaSearchError("No tournaments found. Try a shorter search term.");
     setSofaSearching(false);
   };
 
@@ -915,7 +947,7 @@ function ManageTournament({
     setSofaPickedTournament(t);
     setSofaPickedSeason(null);
     setSofaSeasons([]);
-    const { seasons } = await fetchSofascoreSeasonsForTournament(String(t.id));
+    const seasons = await sofascoreSeasonsClient(t.id);
     setSofaSeasons(seasons);
   };
 

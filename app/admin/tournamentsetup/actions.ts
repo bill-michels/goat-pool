@@ -714,6 +714,7 @@ export async function syncRoundResultsFromSofascore(
       const l = last(sfName);
       return (athletes ?? []).find((a: any) => norm(a.name) === n)
         ?? (reversed ? (athletes ?? []).find((a: any) => norm(a.name) === reversed) : undefined)
+        ?? (athletes ?? []).find((a: any) => { const d = norm(a.name); return d.includes(' ') && n.includes(d); })
         ?? (athletes ?? []).find((a: any) => l.length > 3 && last(a.name) === l);
     };
 
@@ -822,8 +823,12 @@ export async function processSofascoreEvents(
   const last = (s: string) => norm(s).split(" ").slice(-1)[0];
   const findAthlete = (sfName: string) => {
     const n = norm(sfName);
+    const parts = n.split(" ");
+    const reversed = parts.length >= 2 ? [...parts].reverse().join(" ") : null;
     const l = last(sfName);
     return (athletes ?? []).find((a: any) => norm(a.name) === n)
+      ?? (reversed ? (athletes ?? []).find((a: any) => norm(a.name) === reversed) : undefined)
+      ?? (athletes ?? []).find((a: any) => { const d = norm(a.name); return d.includes(" ") && n.includes(d); })
       ?? (athletes ?? []).find((a: any) => l.length > 3 && last(a.name) === l);
   };
 
@@ -923,6 +928,7 @@ export async function syncRoundFromOddsApi(
     const l = last(name);
     return (athletes ?? []).find((a: any) => norm(a.name) === n)
       ?? (reversed ? (athletes ?? []).find((a: any) => norm(a.name) === reversed) : undefined)
+      ?? (athletes ?? []).find((a: any) => { const d = norm(a.name); return d.includes(" ") && n.includes(d); })
       ?? (athletes ?? []).find((a: any) => l.length > 3 && last(a.name) === l);
   };
 

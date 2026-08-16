@@ -71,6 +71,7 @@ async function syncTournament(
     const l = last(name);
     return athletes.find((a: any) => norm(a.name) === n)
       ?? (reversed ? athletes.find((a: any) => norm(a.name) === reversed) : undefined)
+      ?? athletes.find((a: any) => { const d = norm(a.name); return d.includes(' ') && n.includes(d); })
       ?? athletes.find((a: any) => l.length > 3 && last(a.name) === l);
   };
 
