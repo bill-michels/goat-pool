@@ -66,8 +66,11 @@ async function syncTournament(
   const last = (s: string) => norm(s).split(" ").slice(-1)[0];
   const findAthlete = (name: string) => {
     const n = norm(name);
+    const parts = n.split(' ');
+    const reversed = parts.length >= 2 ? [...parts].reverse().join(' ') : null;
     const l = last(name);
     return athletes.find((a: any) => norm(a.name) === n)
+      ?? (reversed ? athletes.find((a: any) => norm(a.name) === reversed) : undefined)
       ?? athletes.find((a: any) => l.length > 3 && last(a.name) === l);
   };
 
