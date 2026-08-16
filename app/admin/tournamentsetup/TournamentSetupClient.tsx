@@ -852,6 +852,7 @@ function ManageTournament({
   const [editingDeadline, setEditingDeadline] = useState(false);
   const [deadlineInput, setDeadlineInput] = useState({ date: "", time: "" });
   const [savingDeadline, setSavingDeadline] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
   // Local copy of deadlines so saves reflect immediately without a full refresh
   const [deadlineOverrides, setDeadlineOverrides] = useState<Record<string, string | null>>({});
 
@@ -1199,6 +1200,46 @@ function ManageTournament({
               </button>
               {oddsKeySaved && <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>✓ Saved</span>}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Athlete Roster */}
+      <div style={{ backgroundColor: c.white, borderRadius: "12px", border: `1px solid ${c.grayLight}`, marginBottom: "20px", overflow: "hidden" }}>
+        <button
+          onClick={() => setRosterOpen(o => !o)}
+          style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: "none", border: "none", cursor: "pointer", textAlign: "left" as const }}
+        >
+          <span style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal }}>
+            Athlete Roster ({athletes.filter(a => a.status !== "inactive").length})
+          </span>
+          <span style={{ fontSize: "12px", color: c.gray }}>{rosterOpen ? "▲ Hide" : "▼ Show"}</span>
+        </button>
+        {rosterOpen && (
+          <div style={{ borderTop: `1px solid ${c.grayLight}`, padding: "0 20px 16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 90px", gap: "0", marginTop: "12px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: c.gray, textTransform: "uppercase" as const, paddingBottom: "6px", borderBottom: `1px solid ${c.grayLight}` }}>Seed</span>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: c.gray, textTransform: "uppercase" as const, paddingBottom: "6px", borderBottom: `1px solid ${c.grayLight}` }}>Name (as entered)</span>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: c.gray, textTransform: "uppercase" as const, paddingBottom: "6px", borderBottom: `1px solid ${c.grayLight}`, textAlign: "right" as const }}>Status</span>
+            </div>
+            {athletes
+              .filter(a => a.status !== "inactive")
+              .sort((a, b) => {
+                if (a.seed === null && b.seed === null) return (a.name ?? "").localeCompare(b.name ?? "");
+                if (a.seed === null) return 1;
+                if (b.seed === null) return -1;
+                return a.seed - b.seed;
+              })
+              .map(a => (
+                <div key={a.id ?? a._key} style={{ display: "grid", gridTemplateColumns: "40px 1fr 90px", gap: "0", padding: "6px 0", borderBottom: `1px solid ${c.grayLighter}` }}>
+                  <span style={{ fontSize: "13px", color: c.gray }}>{a.seed ?? "—"}</span>
+                  <span style={{ fontSize: "13px", color: c.charcoal, fontFamily: "monospace" }}>{a.name}</span>
+                  <span style={{ fontSize: "12px", textAlign: "right" as const, color: a.status === "eliminated" ? c.red : a.has_bye ? c.amber : c.green, fontWeight: 600 }}>
+                    {a.status === "eliminated" ? "elim." : a.has_bye ? "bye" : "active"}
+                  </span>
+                </div>
+              ))
+            }
           </div>
         )}
       </div>
