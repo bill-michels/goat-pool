@@ -69,10 +69,11 @@ async function syncTournament(
     const parts = n.split(' ');
     const reversed = parts.length >= 2 ? [...parts].reverse().join(' ') : null;
     const l = last(name);
+    const byLastName = l.length > 3 ? athletes.filter((a: any) => last(a.name) === l) : [];
     return athletes.find((a: any) => norm(a.name) === n)
       ?? (reversed ? athletes.find((a: any) => norm(a.name) === reversed) : undefined)
       ?? athletes.find((a: any) => { const d = norm(a.name); return d.includes(' ') && n.includes(d); })
-      ?? athletes.find((a: any) => l.length > 3 && last(a.name) === l);
+      ?? (byLastName.length === 1 ? byLastName[0] : undefined);
   };
 
   let totalSynced = 0;
