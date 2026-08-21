@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive, searchSofascoreTournaments, fetchSofascoreSeasonsForTournament, saveSofascoreConnection, processSofascoreEvents } from "./actions";
+import { notifyRoundComplete, notifyEliminatedPlayers, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive, saveSofascoreConnection, processSofascoreEvents } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -813,6 +813,8 @@ function ManageTournament({
   const [assignedCount, setAssignedCount] = useState<number | null>(null);
   const [completingRound, setCompletingRound] = useState(false);
   const [concluding, setConcluding] = useState(false);
+  const [notifyingElim, setNotifyingElim] = useState(false);
+  const [notifyElimResult, setNotifyElimResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Odds API sport key edit state
@@ -1061,6 +1063,32 @@ function ManageTournament({
             >
               Mark as Live
             </button>
+          )}
+          {tournament.status !== "concluded" && (
+            <button
+              onClick={async () => {
+                setNotifyingElim(true);
+                setNotifyElimResult(null);
+                const res = await notifyEliminatedPlayers(tournament.id);
+                setNotifyingElim(false);
+                if (res.error) setNotifyElimResult(`Error: ${res.error}`);
+                else setNotifyElimResult(res.notified === 0 ? "No new eliminations to notify" : `✓ ${res.notified} player${res.notified === 1 ? "" : "s"} notified`);
+              }}
+              disabled={notifyingElim}
+              style={{
+                padding: "10px 20px", borderRadius: "10px",
+                border: `1.5px solid ${c.amber}`, background: c.amberMuted,
+                color: c.amber, fontSize: "14px", fontWeight: 600,
+                cursor: notifyingElim ? "not-allowed" : "pointer",
+              }}
+            >
+              {notifyingElim ? "Notifying..." : "Notify Eliminated"}
+            </button>
+          )}
+          {notifyElimResult && (
+            <span style={{ fontSize: "13px", color: notifyElimResult.startsWith("Error") ? c.red : c.green, fontWeight: 600 }}>
+              {notifyElimResult}
+            </span>
           )}
           {tournament.status !== "concluded" && (
             <button

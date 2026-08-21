@@ -351,6 +351,105 @@ export async function deleteTournament(
   return {};
 }
 
+export async function notifyEliminatedPlayers(
+  tournamentId: string
+): Promise<{ notified: number; error?: string }> {
+  const admin = db();
+  const base = appUrl();
+
+  const { data: rounds } = await admin
+    .from("rounds")
+    .select("round_number")
+    .eq("tournament_id", tournamentId);
+
+  const totalRounds = rounds?.length ?? 0;
+
+  const { data: pools } = await admin
+    .from("pools")
+    .select("id, name, slug")
+    .eq("tournament_id", tournamentId)
+    .in("status", ["active", "concluded"]);
+
+  if (!pools?.length) return { notified: 0 };
+
+  let notified = 0;
+
+  for (const pool of pools) {
+    const { data: eliminatedPlayers } = await admin
+      .from("pool_players")
+      .select("id, user_id, lives_purchased, users(username, email)")
+      .eq("pool_id", pool.id)
+      .eq("status", "eliminated");
+
+    if (!eliminatedPlayers?.length) continue;
+
+    const { data: existingNotifs } = await admin
+      .from("notifications")
+      .select("user_id")
+      .eq("pool_id", pool.id)
+      .eq("type", "elimination");
+
+    const alreadyNotified = new Set((existingNotifs ?? []).map((n: any) => n.user_id as string));
+    const toNotify = eliminatedPlayers.filter((p: any) => !alreadyNotified.has(p.user_id));
+    if (!toNotify.length) continue;
+
+    // Find the most recent loss pick for each player (to show which athlete/round caused elimination)
+    const { data: lossPicks } = await admin
+      .from("picks")
+      .select("user_id, athlete_id, result, athletes(name), rounds(round_number)")
+      .eq("pool_id", pool.id)
+      .eq("result", "loss")
+      .in("user_id", toNotify.map((p: any) => p.user_id));
+
+    const lastLossMap = new Map<string, any>();
+    for (const pick of lossPicks ?? []) {
+      const rn = (pick.rounds as any)?.round_number ?? 0;
+      const cur = lastLossMap.get(pick.user_id);
+      if (!cur || (cur.rounds as any)?.round_number < rn) lastLossMap.set(pick.user_id, pick);
+    }
+
+    await Promise.allSettled(
+      toNotify.map(async (player: any) => {
+        const userInfo = player.users as any;
+        if (!userInfo?.email) return;
+
+        const lastLoss = lastLossMap.get(player.user_id);
+        const athleteName = (lastLoss?.athletes as any)?.name ?? "your pick";
+        const lossRoundNum = (lastLoss?.rounds as any)?.round_number ?? 1;
+
+        await resend.emails.send({
+          from: FROM,
+          to: userInfo.email,
+          subject: `You've been eliminated from ${pool.name}`,
+          html: roundResultEmail({
+            username: userInfo.username ?? "there",
+            poolName: pool.name,
+            roundLabel: roundLabel(lossRoundNum, totalRounds),
+            pickAthleteName: athleteName,
+            result: "loss",
+            livesRemaining: 0,
+            livesPurchased: player.lives_purchased ?? 1,
+            isEliminated: true,
+            poolUrl: `${base}/player/${pool.slug}`,
+          }),
+        });
+
+        await admin.from("notifications").insert({
+          user_id: player.user_id,
+          pool_id: pool.id,
+          type: "elimination",
+          title: "You've been eliminated",
+          body: `You've been eliminated from ${pool.name}.`,
+        });
+
+        notified++;
+      })
+    );
+  }
+
+  return { notified };
+}
+
 export async function notifyRoundComplete(roundId: string) {
   const admin = db();
   const base = appUrl();
