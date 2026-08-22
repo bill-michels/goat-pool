@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -1013,6 +1013,39 @@ function ManageTournament({
   };
 
   const savedCount = activeAthletes.filter((a) => savedResults[a.id!] !== undefined).length;
+  const allSavedForActive = activeAthletes.length > 0 && savedCount === activeAthletes.length;
+
+  const autoCompletedRef = useRef<Set<string>>(new Set());
+
+  const handleCompleteRound = async (roundData: any, roundNumber: number) => {
+    if (completingRound) return;
+    setCompletingRound(true);
+    await autoAssignMissedPicksForRound(roundData.id, roundNumber, tournament.id);
+    await supabase.from("rounds").update({ status: "completed" }).eq("id", roundData.id);
+    const nextRound = rounds.find((r) => r.round_number === roundNumber + 1);
+    // Only advance next round if it hasn't already been opened or completed
+    if (nextRound && nextRound.status === "upcoming") {
+      await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
+    } else if (!nextRound) {
+      await concludeTournament(tournament.id);
+    }
+    notifyRoundComplete(roundData.id);
+    onRoundsUpdated?.(rounds.map(r =>
+      r.id === roundData.id ? { ...r, status: "completed" } :
+      (nextRound && nextRound.status === "upcoming" && r.id === nextRound.id) ? { ...r, status: "active" } : r
+    ));
+    setCompletingRound(false);
+    router.refresh();
+  };
+
+  // Auto-complete when all results for an active round are saved
+  useEffect(() => {
+    if (!activeRoundData || activeRoundData.status !== "active") return;
+    if (!allSavedForActive) return;
+    if (autoCompletedRef.current.has(activeRoundData.id)) return;
+    autoCompletedRef.current.add(activeRoundData.id);
+    handleCompleteRound(activeRoundData, activeRound);
+  }, [allSavedForActive, activeRoundData?.id, activeRoundData?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ maxWidth: "860px", margin: "0 auto", padding: "40px" }}>
@@ -1419,36 +1452,16 @@ function ManageTournament({
               {assigningPicks ? "Assigning..." : "Auto-Assign Missed Picks"}
             </button>
             {activeRoundData?.status === "active" && activeAthletes.length > 0 && (() => {
-              const allSaved = savedCount === activeAthletes.length;
-              const isDisabled = completingRound || !allSaved;
+              const isDisabled = completingRound || !allSavedForActive;
               return (
                 <button
-                  onClick={async () => {
-                    if (!activeRoundData || !allSaved) return;
-                    setCompletingRound(true);
-                    await autoAssignMissedPicksForRound(activeRoundData.id, activeRound, tournament.id);
-                    await supabase.from("rounds").update({ status: "completed" }).eq("id", activeRoundData.id);
-                    const nextRound = rounds.find((r) => r.round_number === activeRound + 1);
-                    if (nextRound) {
-                      await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-                    } else {
-                      await concludeTournament(tournament.id);
-                    }
-                    notifyRoundComplete(activeRoundData.id);
-                    // Optimistic update so the button disappears immediately
-                    onRoundsUpdated?.(rounds.map(r =>
-                      r.id === activeRoundData.id ? { ...r, status: "completed" } :
-                      (nextRound && r.id === nextRound.id) ? { ...r, status: "active" } : r
-                    ));
-                    setCompletingRound(false);
-                    router.refresh();
-                  }}
+                  onClick={() => { if (activeRoundData && allSavedForActive) handleCompleteRound(activeRoundData, activeRound); }}
                   disabled={isDisabled}
                   style={{
                     padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                    border: `1px solid ${allSaved ? c.green : c.grayLight}`,
-                    background: allSaved ? c.green : c.white,
-                    color: allSaved ? c.white : c.gray,
+                    border: `1px solid ${allSavedForActive ? c.green : c.grayLight}`,
+                    background: allSavedForActive ? c.green : c.white,
+                    color: allSavedForActive ? c.white : c.gray,
                     cursor: isDisabled ? "not-allowed" : "pointer",
                     whiteSpace: "nowrap" as const,
                   }}
