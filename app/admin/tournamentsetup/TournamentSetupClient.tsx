@@ -783,12 +783,14 @@ function ManageTournament({
   athletes,
   onEditAthletes,
   onEditDetails,
+  onRoundsUpdated,
 }: {
   tournament: any;
   rounds: any[];
   athletes: Athlete[];
   onEditAthletes: () => void;
   onEditDetails: () => void;
+  onRoundsUpdated?: (rounds: any[]) => void;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -1433,6 +1435,11 @@ function ManageTournament({
                       await concludeTournament(tournament.id);
                     }
                     notifyRoundComplete(activeRoundData.id);
+                    // Optimistic update so the button disappears immediately
+                    onRoundsUpdated?.(rounds.map(r =>
+                      r.id === activeRoundData.id ? { ...r, status: "completed" } :
+                      (nextRound && r.id === nextRound.id) ? { ...r, status: "active" } : r
+                    ));
                     setCompletingRound(false);
                     router.refresh();
                   }}
@@ -1812,6 +1819,9 @@ export default function TournamentSetupClient({
   const [rounds, setRounds] = useState(initialRounds);
   const [athletes, setAthletes] = useState<Athlete[]>(initialAthletes);
 
+  // Sync rounds from server after router.refresh() delivers new initialRounds
+  useEffect(() => { setRounds(initialRounds); }, [initialRounds]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleCreated = (t: any, r: any[]) => {
     setTournament(t);
     setRounds(r);
@@ -1852,6 +1862,7 @@ export default function TournamentSetupClient({
           athletes={athletes}
           onEditAthletes={() => setView("athletes")}
           onEditDetails={() => setView("create")}
+          onRoundsUpdated={setRounds}
         />
       )}
     </div>
