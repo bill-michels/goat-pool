@@ -351,6 +351,98 @@ export async function deleteTournament(
   return {};
 }
 
+export async function notifyRoundResults(
+  tournamentId: string,
+  roundId: string,
+  roundNumber: number
+): Promise<{ notified: number; error?: string }> {
+  const admin = db();
+  const base = appUrl();
+
+  const { data: rounds } = await admin
+    .from("rounds")
+    .select("round_number")
+    .eq("tournament_id", tournamentId);
+  const totalRounds = rounds?.length ?? 0;
+  const label = roundLabel(roundNumber, totalRounds);
+
+  const { data: pools } = await admin
+    .from("pools")
+    .select("id, name, slug")
+    .eq("tournament_id", tournamentId)
+    .in("status", ["active", "concluded"]);
+
+  if (!pools?.length) return { notified: 0 };
+
+  // Notification type is round-scoped so each round notifies independently
+  const notifType = `round_notified_${roundId}`;
+
+  let notified = 0;
+
+  for (const pool of pools) {
+    // Get all picks with results for this round
+    const { data: picks } = await admin
+      .from("picks")
+      .select("user_id, athlete_id, result, athletes(name), pool_players(status, lives_remaining, lives_purchased, users(username, email))")
+      .eq("pool_id", pool.id)
+      .eq("round_id", roundId)
+      .not("result", "is", null);
+
+    if (!picks?.length) continue;
+
+    // Who's already been notified for this round in this pool
+    const { data: existing } = await admin
+      .from("notifications")
+      .select("user_id")
+      .eq("pool_id", pool.id)
+      .eq("type", notifType);
+
+    const alreadyNotified = new Set((existing ?? []).map((n: any) => n.user_id as string));
+
+    await Promise.allSettled(
+      (picks ?? []).map(async (pick: any) => {
+        if (alreadyNotified.has(pick.user_id)) return;
+        const playerInfo = pick.pool_players as any;
+        const userInfo = playerInfo?.users as any;
+        if (!userInfo?.email) return;
+
+        const athleteName = (pick.athletes as any)?.name ?? "your pick";
+        const result = pick.result as "win" | "loss";
+        const isEliminated = playerInfo?.status === "eliminated";
+
+        await resend.emails.send({
+          from: FROM,
+          to: userInfo.email,
+          subject: `${label} update — ${pool.name}`,
+          html: roundResultEmail({
+            username: userInfo.username ?? "there",
+            poolName: pool.name,
+            roundLabel: label,
+            pickAthleteName: athleteName,
+            result,
+            livesRemaining: playerInfo?.lives_remaining ?? 0,
+            livesPurchased: playerInfo?.lives_purchased ?? 1,
+            isEliminated,
+            poolUrl: `${base}/player/${pool.slug}`,
+          }),
+        });
+
+        await admin.from("notifications").insert({
+          user_id: pick.user_id,
+          pool_id: pool.id,
+          type: notifType,
+          title: `${label} result`,
+          body: `${athleteName} ${result === "win" ? "won" : "lost"} in ${pool.name}.`,
+        });
+
+        notified++;
+      })
+    );
+  }
+
+  return { notified };
+}
+
 export async function notifyEliminatedPlayers(
   tournamentId: string
 ): Promise<{ notified: number; error?: string }> {

@@ -54,12 +54,6 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
     ?? activeRounds[0]
     ?? null;
 
-  // Check if the previous round is fully completed
-  const previousRound = activeRound
-    ? (allRounds ?? []).find(r => r.round_number === activeRound.round_number - 1)
-    : null;
-  const isPreviousRoundComplete = !previousRound || previousRound.status === "completed";
-
   if (!activeRound) {
     return (
       <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", minHeight: "100vh", backgroundColor: c.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -74,10 +68,11 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
     );
   }
 
-  // For round pools > 1: only show athletes who won the previous round
-  // For daily pools: show all active athletes scheduled to play today (from Odds API)
-  const prevCompletedRound = poolType === "rounds" && activeRound.round_number > 1
-    ? (allRounds ?? []).find(r => r.round_number === activeRound.round_number - 1 && r.status === "completed")
+  // For round pools > 1: only show athletes who won the previous round.
+  // Use the previous round regardless of its completion status — partial
+  // results are fine; only confirmed winners appear as options.
+  const prevRound = poolType === "rounds" && activeRound.round_number > 1
+    ? (allRounds ?? []).find(r => r.round_number === activeRound.round_number - 1)
     : null;
 
   const [{ data: userPicks }, { data: athletes }, { data: prevRoundWinners }] = await Promise.all([
@@ -89,11 +84,11 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       .eq("status", "active")
       .order("seed", { nullsFirst: false })
       .order("name"),
-    prevCompletedRound
+    prevRound
       ? adminClient
           .from("athlete_results")
           .select("athlete_id")
-          .eq("round_id", prevCompletedRound.id)
+          .eq("round_id", prevRound.id)
           .eq("result", "win")
       : Promise.resolve({ data: null }),
   ]);
@@ -165,15 +160,15 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
     redirect(`/player/${pool.slug}`);
   }
 
-  const previousRoundLabel = poolType === "daily"
+  const prevRoundLabel = poolType === "daily"
     ? null
-    : previousRound
+    : prevRound
       ? (() => {
-          const fromEnd = totalRounds - previousRound.round_number;
+          const fromEnd = totalRounds - prevRound.round_number;
           if (fromEnd === 0) return "Final";
           if (fromEnd === 1) return "SF";
           if (fromEnd === 2) return "QF";
-          return `Round ${previousRound.round_number}`;
+          return `Round ${prevRound.round_number}`;
         })()
       : null;
 
@@ -197,8 +192,8 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       previousPickNames={previousPickNames}
       existingPickId={existingPickForRound?.id ?? null}
       existingPickAthleteId={existingPickForRound?.athlete_id ?? null}
-      isPreviewOnly={poolType === "rounds" && !isPreviousRoundComplete}
-      previousRoundLabel={previousRoundLabel}
+      isPreviewOnly={false}
+      previousRoundLabel={prevRoundLabel}
     />
   );
 }

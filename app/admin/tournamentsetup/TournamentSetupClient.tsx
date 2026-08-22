@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, notifyEliminatedPlayers, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive, saveSofascoreConnection, processSofascoreEvents } from "./actions";
+import { notifyRoundComplete, notifyRoundResults, notifyEliminatedPlayers, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive, saveSofascoreConnection, processSofascoreEvents } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -817,6 +817,8 @@ function ManageTournament({
   const [concluding, setConcluding] = useState(false);
   const [notifyingElim, setNotifyingElim] = useState(false);
   const [notifyElimResult, setNotifyElimResult] = useState<string | null>(null);
+  const [notifyingRound, setNotifyingRound] = useState(false);
+  const [notifyRoundResult, setNotifyRoundResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Odds API sport key edit state
@@ -891,6 +893,7 @@ function ManageTournament({
     setSfError(null);
     setSofaResult(null);
     setSofaError(null);
+    setNotifyRoundResult(null);
 
     const prevRoundData = rounds.find((r) => r.round_number === activeRound - 1);
 
@@ -1421,7 +1424,33 @@ function ManageTournament({
               {byeCount > 0 ? ` — ${byeCount} with a bye not included` : ""}
             </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" as const }}>
+            {notifyRoundResult && (
+              <span style={{ fontSize: "13px", color: notifyRoundResult.startsWith("Error") ? c.red : c.green, fontWeight: 600 }}>
+                {notifyRoundResult}
+              </span>
+            )}
+            {activeRoundData && (
+              <button
+                onClick={async () => {
+                  if (!activeRoundData) return;
+                  setNotifyingRound(true);
+                  setNotifyRoundResult(null);
+                  const res = await notifyRoundResults(tournament.id, activeRoundData.id, activeRound);
+                  setNotifyingRound(false);
+                  setNotifyRoundResult(res.error ? `Error: ${res.error}` : res.notified === 0 ? "No new results to notify" : `✓ ${res.notified} player${res.notified === 1 ? "" : "s"} notified`);
+                }}
+                disabled={notifyingRound}
+                style={{
+                  padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
+                  border: `1px solid ${c.amber}`, background: c.amberMuted,
+                  color: c.amber, cursor: notifyingRound ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap" as const,
+                }}
+              >
+                {notifyingRound ? "Notifying..." : "Notify Players"}
+              </button>
+            )}
             {assignedCount !== null && (
               <span style={{ fontSize: "13px", color: c.green, fontWeight: 600 }}>
                 {assignedCount === 0 ? "No missing picks" : `${assignedCount} pick${assignedCount === 1 ? "" : "s"} assigned`}
