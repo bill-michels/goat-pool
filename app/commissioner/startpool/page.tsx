@@ -18,7 +18,7 @@ export default async function StartPoolPage() {
     adminClient
       .from("tournaments")
       .select("id, name")
-      .in("status", ["upcoming", "active"])
+      .eq("status", "active")
       .order("created_at", { ascending: false }),
   ]);
 

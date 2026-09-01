@@ -142,6 +142,17 @@ export async function POST(req: NextRequest) {
       }
       break;
     }
+
+    case "account.updated": {
+      const account = event.data.object as Stripe.Account;
+      if (account.details_submitted) {
+        await admin
+          .from("users")
+          .update({ stripe_connect_onboarded: true })
+          .eq("stripe_connect_account_id", account.id);
+      }
+      break;
+    }
   }
 
   return NextResponse.json({ received: true });

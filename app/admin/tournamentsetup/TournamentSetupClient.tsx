@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, notifyRoundResults, notifyEliminatedPlayers, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, markTournamentLive, saveSofascoreConnection, processSofascoreEvents } from "./actions";
+import { notifyRoundComplete, notifyRoundResults, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, saveSofascoreConnection, processSofascoreEvents } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -130,6 +130,29 @@ function CreateTournament({
   // Rounds currently showing the input form (vs. confirmed display)
   const [editingRounds, setEditingRounds] = useState<Set<number>>(new Set());
 
+  // Auto-fill state
+  const [startDate, setStartDate] = useState("");
+  const [startTime, setStartTime] = useState("11:00");
+
+  const GRAND_SLAM_OFFSETS = [0, 3, 6, 8, 10, 12, 13];
+
+  const autoFillDeadlines = () => {
+    if (!startDate) return;
+    const baseMs = new Date(`${startDate}T${startTime || "11:00"}`).getTime();
+    const newDeadlines: Record<number, string> = {};
+    const newInputs: Record<number, { date: string; time: string }> = {};
+    for (let i = 0; i < roundCount; i++) {
+      const roundNum = i + 1;
+      const offsetDays = roundCount === 7 ? (GRAND_SLAM_OFFSETS[i] ?? i * 2) : i * 2;
+      const d = new Date(baseMs + offsetDays * 24 * 60 * 60 * 1000);
+      newDeadlines[roundNum] = d.toISOString();
+      newInputs[roundNum] = { date: d.toISOString().slice(0, 10), time: startTime || "11:00" };
+    }
+    setDeadlines(newDeadlines);
+    setInputs(newInputs);
+    setEditingRounds(new Set());
+  };
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -176,7 +199,7 @@ function CreateTournament({
     if (!tournament) {
       const { data, error: tErr } = await supabase
         .from("tournaments")
-        .insert({ name: name.trim(), num_rounds: roundCount, status: "upcoming", created_by: userId, ...sfFields })
+        .insert({ name: name.trim(), num_rounds: roundCount, status: "active", created_by: userId, ...sfFields })
         .select()
         .single();
       if (tErr) {
@@ -275,8 +298,39 @@ function CreateTournament({
             Round Lock Deadlines
           </label>
           <p style={{ fontSize: "13px", color: c.gray, margin: "0 0 12px" }}>
-            The deadline players must submit their pick by. You can set these later once the schedule is confirmed.
+            The deadline players must submit their pick by. Enter the Round 1 start date to auto-fill all rounds, or set each individually.
           </p>
+
+          {/* Auto-fill row */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px", padding: "12px 14px", borderRadius: "10px", backgroundColor: c.grayLighter, border: `1px solid ${c.grayLight}` }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal, whiteSpace: "nowrap" }}>R1 starts</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              style={{ padding: "7px 10px", border: `1.5px solid ${c.grayLight}`, borderRadius: "8px", fontSize: "13px", color: c.charcoal, flex: 1 }}
+            />
+            <input
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              style={{ padding: "7px 10px", border: `1.5px solid ${c.grayLight}`, borderRadius: "8px", fontSize: "13px", color: c.charcoal, width: "120px" }}
+            />
+            <button
+              type="button"
+              onClick={autoFillDeadlines}
+              disabled={!startDate}
+              style={{
+                padding: "7px 14px", borderRadius: "8px", border: "none",
+                background: startDate ? c.green : "#9CA3AF",
+                color: c.white, fontSize: "13px", fontWeight: 600,
+                cursor: startDate ? "pointer" : "not-allowed", whiteSpace: "nowrap",
+              }}
+            >
+              Auto-fill all
+            </button>
+          </div>
+
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {Array.from({ length: roundCount }, (_, i) => {
               const roundNum = i + 1;
@@ -815,8 +869,6 @@ function ManageTournament({
   const [assignedCount, setAssignedCount] = useState<number | null>(null);
   const [completingRound, setCompletingRound] = useState(false);
   const [concluding, setConcluding] = useState(false);
-  const [notifyingElim, setNotifyingElim] = useState(false);
-  const [notifyElimResult, setNotifyElimResult] = useState<string | null>(null);
   const [notifyingRound, setNotifyingRound] = useState(false);
   const [notifyRoundResult, setNotifyRoundResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1087,47 +1139,6 @@ function ManageTournament({
           }}>
             Edit Athletes
           </button>
-          {tournament.status === "upcoming" && (
-            <button
-              onClick={async () => {
-                await markTournamentLive(tournament.id);
-                router.refresh();
-              }}
-              style={{
-                padding: "10px 20px", borderRadius: "10px",
-                border: `1.5px solid ${c.amber}`, background: c.amberMuted,
-                color: c.amber, fontSize: "14px", fontWeight: 600, cursor: "pointer",
-              }}
-            >
-              Mark as Live
-            </button>
-          )}
-          {tournament.status !== "concluded" && (
-            <button
-              onClick={async () => {
-                setNotifyingElim(true);
-                setNotifyElimResult(null);
-                const res = await notifyEliminatedPlayers(tournament.id);
-                setNotifyingElim(false);
-                if (res.error) setNotifyElimResult(`Error: ${res.error}`);
-                else setNotifyElimResult(res.notified === 0 ? "No new eliminations to notify" : `✓ ${res.notified} player${res.notified === 1 ? "" : "s"} notified`);
-              }}
-              disabled={notifyingElim}
-              style={{
-                padding: "10px 20px", borderRadius: "10px",
-                border: `1.5px solid ${c.amber}`, background: c.amberMuted,
-                color: c.amber, fontSize: "14px", fontWeight: 600,
-                cursor: notifyingElim ? "not-allowed" : "pointer",
-              }}
-            >
-              {notifyingElim ? "Notifying..." : "Notify Eliminated"}
-            </button>
-          )}
-          {notifyElimResult && (
-            <span style={{ fontSize: "13px", color: notifyElimResult.startsWith("Error") ? c.red : c.green, fontWeight: 600 }}>
-              {notifyElimResult}
-            </span>
-          )}
           {tournament.status !== "concluded" && (
             <button
               onClick={async () => {

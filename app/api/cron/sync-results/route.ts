@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { findAthlete } from "@/lib/nameMatch";
 
 export const runtime = "nodejs";
 
@@ -45,9 +46,6 @@ async function syncTournament(
   const rounds = (allRounds ?? []).filter(r => r.status === "active");
   if (!rounds.length) return { synced: 0, tournamentName: tournament.name };
 
-  // Flip tournament to active if it's still upcoming
-  await admin.from("tournaments").update({ status: "active" }).eq("id", tournament.id).eq("status", "upcoming");
-
   // Lookup by round_number for eligibility checks
   const roundByNumber = new Map((allRounds ?? []).map(r => [r.round_number, r]));
 
@@ -62,19 +60,6 @@ async function syncTournament(
   const events = await fetchOddsApiScores(tournament.odds_api_sport_key, daysFrom);
   if (!events.length) return { synced: 0, tournamentName: tournament.name };
 
-  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const last = (s: string) => norm(s).split(" ").slice(-1)[0];
-  const findAthlete = (name: string) => {
-    const n = norm(name);
-    const parts = n.split(' ');
-    const reversed = parts.length >= 2 ? [...parts].reverse().join(' ') : null;
-    const l = last(name);
-    const byLastName = l.length > 3 ? athletes.filter((a: any) => last(a.name) === l) : [];
-    return athletes.find((a: any) => norm(a.name) === n)
-      ?? (reversed ? athletes.find((a: any) => norm(a.name) === reversed) : undefined)
-      ?? athletes.find((a: any) => { const d = norm(a.name); return d.includes(' ') && n.includes(d); })
-      ?? (byLastName.length === 1 ? byLastName[0] : undefined);
-  };
 
   let totalSynced = 0;
 
@@ -108,8 +93,8 @@ async function syncTournament(
       const wl = getWinnerLoser(event);
       if (!wl) continue;
 
-      const winnerAthlete = findAthlete(wl.winnerName);
-      const loserAthlete = findAthlete(wl.loserName);
+      const winnerAthlete = findAthlete(wl.winnerName, athletes);
+      const loserAthlete = findAthlete(wl.loserName, athletes);
       if (!winnerAthlete || !loserAthlete) continue;
       if (eligibleAthleteIds && (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id))) continue;
       if (existingAthleteIds.has(winnerAthlete.id) && existingAthleteIds.has(loserAthlete.id)) continue;
@@ -160,6 +145,20 @@ async function syncTournament(
         existingAthleteIds.add(athleteId);
         totalSynced++;
       }
+    }
+  }
+
+  // Auto-activate Round N+1 for any active round that now has wins
+  for (const round of rounds) {
+    const nextRound = roundByNumber.get(round.round_number + 1);
+    if (!nextRound || nextRound.status !== "upcoming") continue;
+    const { count } = await admin
+      .from("athlete_results")
+      .select("id", { count: "exact", head: true })
+      .eq("round_id", round.id)
+      .eq("result", "win");
+    if ((count ?? 0) > 0) {
+      await admin.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
     }
   }
 
@@ -232,6 +231,9 @@ async function autoAssignExpiredRounds(admin: ReturnType<typeof db>): Promise<nu
         if (!error) totalAssigned++;
       }
     }
+
+    // Lock the round now that the deadline has passed and auto-assigns are done
+    await admin.from("rounds").update({ status: "locked" }).eq("id", round.id);
   }
   return totalAssigned;
 }

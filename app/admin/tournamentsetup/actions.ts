@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { resend, FROM, appUrl } from "@/lib/resend";
 import { roundResultEmail, pickReminderEmail } from "@/lib/emails";
+import { findAthlete } from "@/lib/nameMatch";
 
 const db = () =>
   createServiceClient(
@@ -15,6 +16,29 @@ async function getAdminUserId(): Promise<string | null> {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   return user?.id ?? null;
+}
+
+async function activateNextRoundIfNeeded(
+  admin: ReturnType<typeof db>,
+  tournamentId: string,
+  roundId: string,
+  roundNumber: number
+): Promise<void> {
+  const { data: nextRound } = await admin
+    .from("rounds")
+    .select("id, status")
+    .eq("tournament_id", tournamentId)
+    .eq("round_number", roundNumber + 1)
+    .maybeSingle();
+  if (!nextRound || nextRound.status !== "upcoming") return;
+  const { count } = await admin
+    .from("athlete_results")
+    .select("id", { count: "exact", head: true })
+    .eq("round_id", roundId)
+    .eq("result", "win");
+  if ((count ?? 0) > 0) {
+    await admin.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
+  }
 }
 
 function roundLabel(roundNumber: number, totalRounds: number): string {
@@ -131,10 +155,9 @@ export async function processAthleteResult(
   );
   if (resErr) return { error: resErr.message };
 
-  // Flip tournament to active if it's still upcoming; auto-open the next round for picks
+  // Auto-open the next round for picks
   const { data: round } = await admin.from("rounds").select("tournament_id, round_number").eq("id", roundId).single();
   if (round) {
-    await ensureTournamentActive(admin, round.tournament_id);
     await admin
       .from("rounds")
       .update({ status: "active" })
@@ -281,24 +304,6 @@ export async function concludeTournamentPools(
     .in("status", ["active", "open"]);
 }
 
-async function ensureTournamentActive(admin: ReturnType<typeof db>, tournamentId: string) {
-  await admin
-    .from("tournaments")
-    .update({ status: "active" })
-    .eq("id", tournamentId)
-    .eq("status", "upcoming");
-}
-
-export async function markTournamentLive(
-  tournamentId: string
-): Promise<{ error?: string }> {
-  const userId = await getAdminUserId();
-  if (!userId) return { error: "Not authenticated." };
-  const admin = db();
-  await ensureTournamentActive(admin, tournamentId);
-  return {};
-}
-
 export async function concludeTournament(
   tournamentId: string
 ): Promise<{ error?: string }> {
@@ -324,6 +329,22 @@ export async function concludeTournament(
 
   // Conclude all associated pools
   await concludeTournamentPools(tournamentId);
+
+  // Mark any still-alive players as winners
+  const { data: concludedPools } = await admin
+    .from("pools")
+    .select("id")
+    .eq("tournament_id", tournamentId);
+
+  if (concludedPools?.length) {
+    for (const pool of concludedPools) {
+      await admin
+        .from("pool_players")
+        .update({ status: "winner" })
+        .eq("pool_id", pool.id)
+        .eq("status", "alive");
+    }
+  }
 
   return {};
 }
@@ -895,48 +916,59 @@ export async function syncRoundResultsFromSofascore(
       .eq("round_id", roundId);
     const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
 
-    const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    const last = (s: string) => norm(s).split(" ").slice(-1)[0];
-
-    const findAthlete = (sfName: string) => {
-      const n = norm(sfName);
-      const parts = n.split(' ');
-      const reversed = parts.length >= 2 ? [...parts].reverse().join(' ') : null;
-      const l = last(sfName);
-      const byLastName = l.length > 3 ? (athletes ?? []).filter((a: any) => last(a.name) === l) : [];
-      return (athletes ?? []).find((a: any) => norm(a.name) === n)
-        ?? (reversed ? (athletes ?? []).find((a: any) => norm(a.name) === reversed) : undefined)
-        ?? (athletes ?? []).find((a: any) => { const d = norm(a.name); return d.includes(' ') && n.includes(d); })
-        ?? (byLastName.length === 1 ? byLastName[0] : undefined);
-    };
+    // For rounds beyond the first, only process athletes who advanced from the previous round.
+    let eligibleAthleteIds: Set<string> | null = null;
+    if (roundNumber > 1) {
+      const { data: prevRound } = await admin
+        .from("rounds")
+        .select("id")
+        .eq("tournament_id", tournamentId)
+        .eq("round_number", roundNumber - 1)
+        .maybeSingle();
+      const [{ data: prevWinners }, { data: byeAthletes }] = await Promise.all([
+        prevRound
+          ? admin.from("athlete_results").select("athlete_id").eq("round_id", prevRound.id).eq("result", "win")
+          : Promise.resolve({ data: [] as any[] }),
+        roundNumber === 2
+          ? admin.from("athletes").select("id").eq("tournament_id", tournamentId).eq("has_bye", true)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+      eligibleAthleteIds = new Set([
+        ...(prevWinners ?? []).map((r: any) => r.athlete_id as string),
+        ...(byeAthletes ?? []).map((a: any) => a.id as string),
+      ]);
+    }
 
     let synced = 0;
     let skipped = 0;
     const unmatched: string[] = [];
 
+    const athleteList = athletes ?? [];
     for (const event of targetEvents) {
       const winnerName: string = event.winnerCode === 1 ? event.homeTeam?.name : event.awayTeam?.name;
       const loserName: string = event.winnerCode === 1 ? event.awayTeam?.name : event.homeTeam?.name;
       if (!winnerName || !loserName) continue;
 
-      for (const [sfName, result] of [[winnerName, "win"], [loserName, "loss"]] as const) {
-        const athlete = findAthlete(sfName);
-        if (!athlete) {
-          unmatched.push(sfName);
-          continue;
-        }
-        if (existingAthleteIds.has(athlete.id)) {
-          skipped++;
-          continue;
-        }
+      const winnerAthlete = findAthlete(winnerName, athleteList);
+      const loserAthlete = findAthlete(loserName, athleteList);
+
+      if (eligibleAthleteIds) {
+        if (!winnerAthlete || !loserAthlete) continue;
+        if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
+      }
+
+      for (const [sfName, athlete, result] of [
+        [winnerName, winnerAthlete, "win"],
+        [loserName, loserAthlete, "loss"],
+      ] as const) {
+        if (!athlete) { unmatched.push(sfName); continue; }
+        if (existingAthleteIds.has(athlete.id)) { skipped++; continue; }
         const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
-        if (!error) {
-          existingAthleteIds.add(athlete.id);
-          synced++;
-        }
+        if (!error) { existingAthleteIds.add(athlete.id); synced++; }
       }
     }
 
+    await activateNextRoundIfNeeded(admin, tournamentId, roundId, roundNumber);
     return { synced, unmatched: Array.from(new Set(unmatched)), skipped };
   } catch (e: any) {
     return { synced: 0, unmatched: [], skipped: 0, error: String(e.message ?? e) };
@@ -1011,20 +1043,30 @@ export async function processSofascoreEvents(
   const { data: existingResults } = await admin.from("athlete_results").select("athlete_id").eq("round_id", roundId);
   const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
 
-  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const last = (s: string) => norm(s).split(" ").slice(-1)[0];
-  const findAthlete = (sfName: string) => {
-    const n = norm(sfName);
-    const parts = n.split(" ");
-    const reversed = parts.length >= 2 ? [...parts].reverse().join(" ") : null;
-    const l = last(sfName);
-    const byLastName = l.length > 3 ? (athletes ?? []).filter((a: any) => last(a.name) === l) : [];
-    return (athletes ?? []).find((a: any) => norm(a.name) === n)
-      ?? (reversed ? (athletes ?? []).find((a: any) => norm(a.name) === reversed) : undefined)
-      ?? (athletes ?? []).find((a: any) => { const d = norm(a.name); return d.includes(" ") && n.includes(d); })
-      ?? (byLastName.length === 1 ? byLastName[0] : undefined);
-  };
+  // For rounds beyond the first, only process athletes who advanced from the previous round.
+  let eligibleAthleteIds: Set<string> | null = null;
+  if (roundNumber > 1) {
+    const { data: prevRound } = await admin
+      .from("rounds")
+      .select("id")
+      .eq("tournament_id", tournamentId)
+      .eq("round_number", roundNumber - 1)
+      .maybeSingle();
+    const [{ data: prevWinners }, { data: byeAthletes }] = await Promise.all([
+      prevRound
+        ? admin.from("athlete_results").select("athlete_id").eq("round_id", prevRound.id).eq("result", "win")
+        : Promise.resolve({ data: [] as any[] }),
+      roundNumber === 2
+        ? admin.from("athletes").select("id").eq("tournament_id", tournamentId).eq("has_bye", true)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+    eligibleAthleteIds = new Set([
+      ...(prevWinners ?? []).map((r: any) => r.athlete_id as string),
+      ...(byeAthletes ?? []).map((a: any) => a.id as string),
+    ]);
+  }
 
+  const athleteList = athletes ?? [];
   let synced = 0;
   let skipped = 0;
   const unmatched: string[] = [];
@@ -1034,8 +1076,18 @@ export async function processSofascoreEvents(
     const loserName: string = event.winnerCode === 1 ? event.awayTeam?.name : event.homeTeam?.name;
     if (!winnerName || !loserName) continue;
 
-    for (const [sfName, result] of [[winnerName, "win"], [loserName, "loss"]] as const) {
-      const athlete = findAthlete(sfName);
+    const winnerAthlete = findAthlete(winnerName, athleteList);
+    const loserAthlete = findAthlete(loserName, athleteList);
+
+    if (eligibleAthleteIds) {
+      if (!winnerAthlete || !loserAthlete) continue;
+      if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
+    }
+
+    for (const [sfName, athlete, result] of [
+      [winnerName, winnerAthlete, "win"],
+      [loserName, loserAthlete, "loss"],
+    ] as const) {
       if (!athlete) { unmatched.push(sfName); continue; }
       if (existingAthleteIds.has(athlete.id)) { skipped++; continue; }
       const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
@@ -1043,6 +1095,7 @@ export async function processSofascoreEvents(
     }
   }
 
+  await activateNextRoundIfNeeded(admin, tournamentId, roundId, roundNumber);
   return { synced, unmatched: Array.from(new Set(unmatched)), skipped, sofascoreRoundName: target.name };
 }
 
@@ -1078,9 +1131,6 @@ export async function syncRoundFromOddsApi(
 
   const admin = db();
 
-  // Flip tournament to active if it's still upcoming
-  await ensureTournamentActive(admin, tournamentId);
-
   const { data: athletes } = await admin.from("athletes").select("id, name").eq("tournament_id", tournamentId).neq("status", "inactive");
   const { data: existingResults } = await admin.from("athlete_results").select("athlete_id").eq("round_id", roundId);
   const existingAthleteIds = new Set((existingResults ?? []).map((r: any) => r.athlete_id as string));
@@ -1111,20 +1161,7 @@ export async function syncRoundFromOddsApi(
     ]);
   }
 
-  const norm = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const last = (s: string) => norm(s).split(" ").slice(-1)[0];
-  const findAthlete = (name: string) => {
-    const n = norm(name);
-    const parts = n.split(' ');
-    const reversed = parts.length >= 2 ? [...parts].reverse().join(' ') : null;
-    const l = last(name);
-    const byLastName = l.length > 3 ? (athletes ?? []).filter((a: any) => last(a.name) === l) : [];
-    return (athletes ?? []).find((a: any) => norm(a.name) === n)
-      ?? (reversed ? (athletes ?? []).find((a: any) => norm(a.name) === reversed) : undefined)
-      ?? (athletes ?? []).find((a: any) => { const d = norm(a.name); return d.includes(" ") && n.includes(d); })
-      ?? (byLastName.length === 1 ? byLastName[0] : undefined);
-  };
-
+  const athleteList = athletes ?? [];
   let synced = 0;
   let skipped = 0;
   const unmatched: string[] = [];
@@ -1148,11 +1185,10 @@ export async function syncRoundFromOddsApi(
     // Equal scores = likely walkover or retirement (can't determine winner automatically).
     // Show the actual API scores so the cause is visible.
     if (aScore === bScore) {
-      const nameA = findAthlete(a.name) ? a.name : null;
-      const nameB = findAthlete(b.name) ? b.name : null;
-      const bothKnown = nameA && nameB;
-      const neitherRecorded = !existingAthleteIds.has(findAthlete(a.name)?.id ?? "") &&
-                              !existingAthleteIds.has(findAthlete(b.name)?.id ?? "");
+      const athA = findAthlete(a.name, athleteList);
+      const athB = findAthlete(b.name, athleteList);
+      const bothKnown = athA && athB;
+      const neitherRecorded = !existingAthleteIds.has(athA?.id ?? "") && !existingAthleteIds.has(athB?.id ?? "");
       if (bothKnown && neitherRecorded) needsManual.push(`${a.name} vs ${b.name} (API scores: ${a.score}-${b.score})`);
       continue;
     }
@@ -1160,8 +1196,8 @@ export async function syncRoundFromOddsApi(
     const winnerName = aScore > bScore ? a.name : b.name;
     const loserName = aScore > bScore ? b.name : a.name;
 
-    const winnerAthlete = findAthlete(winnerName);
-    const loserAthlete = findAthlete(loserName);
+    const winnerAthlete = findAthlete(winnerName, athleteList);
+    const loserAthlete = findAthlete(loserName, athleteList);
 
     // Skip the entire match if either athlete isn't eligible for this round.
     // Track these as "blocked" so the admin can see which matches were found but filtered.
@@ -1184,5 +1220,6 @@ export async function syncRoundFromOddsApi(
     }
   }
 
+  await activateNextRoundIfNeeded(admin, tournamentId, roundId, roundNumber);
   return { synced, unmatched: Array.from(new Set(unmatched)), skipped, needsManual: Array.from(new Set(needsManual)), blockedByEligibility: Array.from(new Set(blockedByEligibility)) };
 }

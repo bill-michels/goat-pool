@@ -48,14 +48,19 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
       .eq("pool_id", pool.id),
     adminClient
       .from("picks")
-      .select("id, user_id, round_id, athlete_id, athletes(name, seed), rounds(round_number, status)")
+      .select("id, user_id, round_id, athlete_id, result, athletes(name, seed), rounds(round_number, status)")
       .eq("pool_id", pool.id),
   ]);
 
   const now = new Date().toISOString();
+  const pickedRoundIds = new Set(
+    (allPicks ?? []).filter((p: any) => p.user_id === user.id).map((p: any) => p.round_id)
+  );
+  const activeRounds = (rounds ?? []).filter((r: any) => r.status === "active");
   const activeRound =
-    (rounds ?? []).find((r: any) => r.status === "active" && (!r.lock_deadline || r.lock_deadline > now))
-    ?? (rounds ?? []).find((r: any) => r.status === "active")
+    activeRounds.find(r => !pickedRoundIds.has(r.id) && (!r.lock_deadline || r.lock_deadline > now))
+    ?? activeRounds.find(r => !r.lock_deadline || r.lock_deadline > now)
+    ?? activeRounds[0]
     ?? null;
   const completedRoundIds = new Set(
     (rounds ?? []).filter((r: any) => r.status === "locked" || r.status === "completed").map((r: any) => r.id)
@@ -64,6 +69,16 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
   const userPickForActiveRound = activeRound
     ? (allPicks ?? []).find((p: any) => p.user_id === user.id && p.round_id === activeRound.id)
     : null;
+
+  const userPicksByRoundId: Record<string, { athleteName: string; result: string | null }> = {};
+  for (const p of (allPicks ?? [])) {
+    if ((p as any).user_id === user.id) {
+      userPicksByRoundId[(p as any).round_id] = {
+        athleteName: ((p as any).athletes as any)?.name ?? "?",
+        result: (p as any).result ?? null,
+      };
+    }
+  }
 
   const players = (poolPlayers ?? []).map((pp: any) => {
     const completedPicks = (allPicks ?? [])
@@ -120,6 +135,7 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
       } : null}
       rounds={roundsForView}
       players={players}
+      userPicksByRoundId={userPicksByRoundId}
       activeRound={activeRound ? {
         id: activeRound.id,
         roundNumber: activeRound.round_number,

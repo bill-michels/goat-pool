@@ -41,16 +41,28 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
 
   if (!membership || membership.status !== "alive") redirect(`/player/${pool.slug}`);
 
-  const { data: allRounds } = await adminClient
-    .from("rounds")
-    .select("id, round_number, status, lock_deadline")
-    .eq("tournament_id", tournamentId)
-    .order("round_number");
+  const [{ data: allRounds }, { data: existingPicks }] = await Promise.all([
+    adminClient
+      .from("rounds")
+      .select("id, round_number, status, lock_deadline")
+      .eq("tournament_id", tournamentId)
+      .order("round_number"),
+    adminClient
+      .from("picks")
+      .select("id, round_id, athlete_id")
+      .eq("pool_id", pool.id)
+      .eq("user_id", user.id),
+  ]);
 
+  const pickedRoundIds = new Set((existingPicks ?? []).map((p: any) => p.round_id));
   const now = new Date().toISOString();
   const activeRounds = (allRounds ?? []).filter(r => r.status === "active");
-  // Prefer a round whose lock deadline hasn't passed yet; fall back to any active round
-  const activeRound = activeRounds.find(r => !r.lock_deadline || r.lock_deadline > now)
+  // Prefer a round the player hasn't picked for yet whose deadline is still open.
+  // Falls back to any open round (so they can still edit an existing pick),
+  // then to any active round as a last resort.
+  const activeRound =
+    activeRounds.find(r => !pickedRoundIds.has(r.id) && (!r.lock_deadline || r.lock_deadline > now))
+    ?? activeRounds.find(r => !r.lock_deadline || r.lock_deadline > now)
     ?? activeRounds[0]
     ?? null;
 
@@ -75,8 +87,8 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
     ? (allRounds ?? []).find(r => r.round_number === activeRound.round_number - 1)
     : null;
 
-  const [{ data: userPicks }, { data: athletes }, { data: prevRoundWinners }] = await Promise.all([
-    adminClient.from("picks").select("id, round_id, athlete_id").eq("pool_id", pool.id).eq("user_id", user.id),
+  const userPicks = existingPicks;
+  const [{ data: athletes }, { data: prevRoundWinners }] = await Promise.all([
     adminClient
       .from("athletes")
       .select("id, name, seed, has_bye")

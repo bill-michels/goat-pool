@@ -95,7 +95,7 @@ export default async function AdminPage() {
     admin.from("users").select("*", { count: "exact", head: true }),
     admin.from("tournaments")
       .select("id, name, num_rounds, status")
-      .in("status", ["upcoming", "active"])
+      .eq("status", "active")
       .order("created_at", { ascending: false }),
     admin.from("tournaments")
       .select("id, name, status")
@@ -263,7 +263,7 @@ export default async function AdminPage() {
             </div>
           ) : (
             <div style={{ backgroundColor: c.white, borderRadius: "14px", padding: "32px", border: `1px solid ${c.grayLight}`, textAlign: "center" }}>
-              <p style={{ fontSize: "15px", color: c.gray, margin: "0 0 16px" }}>No active or upcoming tournaments.</p>
+              <p style={{ fontSize: "15px", color: c.gray, margin: "0 0 16px" }}>No active tournaments.</p>
               <Link href="/admin/tournamentsetup" style={{
                 padding: "10px 20px", borderRadius: "10px",
                 background: c.green, color: c.white, fontSize: "14px", fontWeight: 600, textDecoration: "none",

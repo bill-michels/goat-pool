@@ -45,6 +45,7 @@ type Props = {
   membership: { status: string; livesRemaining: number; livesPurchased: number } | null;
   rounds: Round[];
   players: Player[];
+  userPicksByRoundId: Record<string, { athleteName: string; result: string | null }>;
   activeRound: ActiveRound | null;
   totalPlayers: number;
   aliveCount: number;
@@ -53,7 +54,7 @@ type Props = {
 
 export default function PoolViewClient({
   username, isCommissioner, pool, membership, rounds, players,
-  activeRound, totalPlayers, aliveCount, eliminatedCount,
+  userPicksByRoundId, activeRound, totalPlayers, aliveCount, eliminatedCount,
 }: Props) {
   const [selectedRound, setSelectedRound] = useState<string | null>(null);
 
@@ -65,9 +66,6 @@ export default function PoolViewClient({
     ? new Date(activeRound.lockDeadline) < new Date()
     : false;
   const canPickRound = activeRound && isAlive && !activeRoundIsLocked;
-  const pickButtonLabel = canPickRound
-    ? (activeRound.hasPick ? "Change Pick" : "Place Pick")
-    : null;
 
   return (
     <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: c.charcoal, minHeight: "100vh", backgroundColor: c.cream }}>
@@ -82,46 +80,23 @@ export default function PoolViewClient({
         </div>
 
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
-              <h1 style={{ fontSize: "28px", fontWeight: 800, color: c.charcoal, margin: 0, letterSpacing: "-0.5px" }}>{pool.name}</h1>
-              <span style={{
-                padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600,
-                backgroundColor: (pool.status === "active" || pool.status === "open") ? c.greenMuted : c.grayLighter,
-                color: (pool.status === "active" || pool.status === "open") ? c.green : c.gray,
-              }}>
-                {(pool.status === "active" || pool.status === "open") ? "Live" : pool.status === "cancelled" ? "Cancelled" : "Concluded"}
-              </span>
-            </div>
-            <p style={{ fontSize: "14px", color: c.gray, margin: "0 0 2px" }}>
-              Commissioner: {pool.commissionerUsername}
-            </p>
-            <p style={{ fontSize: "14px", color: c.gray, margin: 0 }}>
-              Tournament: {pool.tournamentName}
-            </p>
+        <div style={{ marginBottom: "28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
+            <h1 style={{ fontSize: "28px", fontWeight: 800, color: c.charcoal, margin: 0, letterSpacing: "-0.5px" }}>{pool.name}</h1>
+            <span style={{
+              padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600,
+              backgroundColor: (pool.status === "active" || pool.status === "open") ? c.greenMuted : c.grayLighter,
+              color: (pool.status === "active" || pool.status === "open") ? c.green : c.gray,
+            }}>
+              {(pool.status === "active" || pool.status === "open") ? "Live" : pool.status === "cancelled" ? "Cancelled" : "Concluded"}
+            </span>
           </div>
-          {canPickRound && (
-            <Link href={`/player/${pool.slug}/placepick`} style={{
-              padding: "12px 24px", borderRadius: "10px", border: "none",
-              background: c.green, color: c.white, fontSize: "15px", fontWeight: 600,
-              textDecoration: "none", boxShadow: "0 2px 8px rgba(74,124,89,0.3)",
-            }}>
-              {pickButtonLabel}
-            </Link>
-          )}
-          {activeRound && isAlive && activeRoundIsLocked && (
-            <div style={{
-              padding: "12px 20px", borderRadius: "10px",
-              backgroundColor: c.amberMuted, border: `1px solid #FCD34D`,
-              textAlign: "center",
-            }}>
-              <p style={{ fontSize: "13px", fontWeight: 700, color: c.amber, margin: "0 0 2px" }}>
-                {roundLabel(activeRound.roundNumber, pool.totalRounds, pool.poolType)} Picks Locked
-              </p>
-              <p style={{ fontSize: "12px", color: c.amber, margin: 0 }}>Awaiting results</p>
-            </div>
-          )}
+          <p style={{ fontSize: "14px", color: c.gray, margin: "0 0 2px" }}>
+            Commissioner: {pool.commissionerUsername}
+          </p>
+          <p style={{ fontSize: "14px", color: c.gray, margin: 0 }}>
+            Tournament: {pool.tournamentName}
+          </p>
         </div>
 
         {/* Your Status */}
@@ -195,11 +170,11 @@ export default function PoolViewClient({
           ))}
         </div>
 
-        {/* Rounds & Lock Dates */}
+        {/* Rounds, Picks & Lock Dates */}
         {rounds.length > 0 && (
           <div style={{ marginBottom: "28px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px" }}>
-              <p style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal, margin: 0 }}>{pool.poolType === "daily" ? "Days & Deadlines" : "Rounds & Lock Dates"}</p>
+              <p style={{ fontSize: "13px", fontWeight: 600, color: c.charcoal, margin: 0 }}>{pool.poolType === "daily" ? "Days & Picks" : "Rounds & Picks"}</p>
               <p style={{ fontSize: "11px", color: c.gray, margin: 0 }}>Dates may shift based on match times</p>
             </div>
             <div style={{ backgroundColor: c.white, borderRadius: "12px", border: `1px solid ${c.grayLight}`, overflow: "hidden" }}>
@@ -207,21 +182,25 @@ export default function PoolViewClient({
                 const isDone = r.status === "completed" || r.status === "locked";
                 const isActive = r.status === "active";
                 const isSelected = selectedRound === r.id;
-                const completedRounds = rounds.filter(r => r.status === "completed" || r.status === "locked");
+                const completedRounds = rounds.filter(rr => rr.status === "completed" || rr.status === "locked");
                 const pickIdx = completedRounds.findIndex(cr => cr.id === r.id);
+                const myPick = userPicksByRoundId[r.id] ?? null;
+                const isPickableRound = canPickRound && activeRound?.id === r.id;
+                const pickColor = myPick?.result === "win" ? c.green : myPick?.result === "loss" ? c.red : c.charcoal;
                 return (
                   <div key={r.id}>
                     <div
                       onClick={() => isDone && setSelectedRound(isSelected ? null : r.id)}
                       style={{
                         display: "flex", justifyContent: "space-between", alignItems: "center",
-                        padding: "10px 16px",
+                        padding: "10px 16px", gap: "12px",
                         borderTop: i > 0 ? `1px solid ${c.grayLight}` : "none",
                         backgroundColor: isSelected ? c.grayLighter : isActive ? c.greenMuted : "transparent",
                         cursor: isDone ? "pointer" : "default",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      {/* Left: round label + badges */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: "0 0 auto" }}>
                         <span style={{ fontSize: "13px", fontWeight: isActive ? 700 : 500, color: isDone ? c.gray : isActive ? c.green : c.charcoal }}>
                           {roundLabel(r.roundNumber, pool.totalRounds, pool.poolType)}
                         </span>
@@ -229,17 +208,45 @@ export default function PoolViewClient({
                           <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "5px", backgroundColor: c.green, color: c.white }}>Active</span>
                         )}
                         {isDone && (
-                          <span style={{ fontSize: "11px", color: c.gray }}>
-                            {isSelected ? "Hide picks ▲" : "View picks ▼"}
-                          </span>
+                          <span style={{ fontSize: "11px", color: c.gray }}>{isSelected ? "Hide ▲" : "View all ▼"}</span>
                         )}
                       </div>
-                      <span style={{ fontSize: "13px", color: isDone ? c.gray : c.charcoal, textDecoration: isDone ? "line-through" : "none" }}>
-                        {r.lockDeadline ? formatDeadline(r.lockDeadline) : "—"}
-                      </span>
+
+                      {/* Right: pick + action + lock date */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginLeft: "auto" }}>
+                        {/* Show pick name for done or active rounds */}
+                        {myPick && !isPickableRound && (
+                          <span style={{ fontSize: "13px", fontWeight: 600, color: pickColor }}>
+                            {myPick.athleteName}
+                            {myPick.result === "win" && " ✓"}
+                            {myPick.result === "loss" && " ✗"}
+                          </span>
+                        )}
+                        {/* Active pickable round */}
+                        {isPickableRound && myPick && (
+                          <span style={{ fontSize: "13px", color: c.gray }}>{myPick.athleteName}</span>
+                        )}
+                        {isPickableRound && (
+                          <Link
+                            href={`/player/${pool.slug}/placepick`}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              padding: "5px 12px", borderRadius: "7px",
+                              background: c.green, color: c.white, fontSize: "12px", fontWeight: 600,
+                              textDecoration: "none", whiteSpace: "nowrap",
+                            }}
+                          >
+                            {myPick ? "Change Pick" : "Place Pick →"}
+                          </Link>
+                        )}
+                        {/* Lock date */}
+                        <span style={{ fontSize: "12px", color: isDone ? c.gray : c.charcoal, textDecoration: isDone ? "line-through" : "none", whiteSpace: "nowrap" }}>
+                          {r.lockDeadline ? formatDeadline(r.lockDeadline) : "—"}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Inline picks drawer */}
+                    {/* Inline picks drawer — all players' picks for done rounds */}
                     {isSelected && pickIdx >= 0 && (
                       <div style={{ borderTop: `1px solid ${c.grayLight}` }}>
                         {players
