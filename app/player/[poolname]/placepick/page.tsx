@@ -62,8 +62,8 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
   // then to any active round as a last resort.
   const activeRound =
     activeRounds.find(r => !pickedRoundIds.has(r.id) && (!r.lock_deadline || r.lock_deadline > now))
-    ?? activeRounds.find(r => !r.lock_deadline || r.lock_deadline > now)
-    ?? activeRounds[0]
+    ?? [...activeRounds].reverse().find(r => !r.lock_deadline || r.lock_deadline > now)
+    ?? activeRounds[activeRounds.length - 1]
     ?? null;
 
   if (!activeRound) {
