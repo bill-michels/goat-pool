@@ -953,6 +953,7 @@ export async function syncRoundResultsFromSofascore(
       const loserAthlete = findAthlete(loserName, athleteList);
 
       if (!winnerAthlete) { unmatched.push(winnerName); continue; }
+      if (!loserAthlete && roundNumber > 1) continue;
       if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
 
       const sfPairs: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [
@@ -1079,6 +1080,7 @@ export async function processSofascoreEvents(
     const loserAthlete = findAthlete(loserName, athleteList);
 
     if (!winnerAthlete) { unmatched.push(winnerName); continue; }
+    if (!loserAthlete && roundNumber > 1) continue;
     if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
 
     const sfPairs2: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [
@@ -1198,6 +1200,7 @@ export async function syncRoundFromOddsApi(
     const loserAthlete = findAthlete(loserName, athleteList);
 
     if (!winnerAthlete) { unmatched.push(winnerName); continue; }
+    if (!loserAthlete && roundNumber > 1) continue;
     if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) {
       blockedByEligibility.push(`${winnerName} def. ${loserName}`);
       continue;

@@ -96,6 +96,10 @@ async function syncTournament(
       const winnerAthlete = findAthlete(wl.winnerName, athletes);
       const loserAthlete = findAthlete(wl.loserName, athletes);
       if (!winnerAthlete) continue;
+      // Round 2+: both athletes must be findable — if the loser can't be matched it's
+      // likely a name-format mismatch, not a genuinely untracked player.
+      // Round 1: allow winner-only for qualifier opponents not in the athlete list.
+      if (!loserAthlete && round.round_number > 1) continue;
       if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
       const pairs: [string, "win" | "loss"][] = [[winnerAthlete.id, "win"]];
       if (loserAthlete) pairs.push([loserAthlete.id, "loss"]);
