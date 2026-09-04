@@ -95,11 +95,13 @@ async function syncTournament(
 
       const winnerAthlete = findAthlete(wl.winnerName, athletes);
       const loserAthlete = findAthlete(wl.loserName, athletes);
-      if (!winnerAthlete || !loserAthlete) continue;
-      if (eligibleAthleteIds && (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id))) continue;
-      if (existingAthleteIds.has(winnerAthlete.id) && existingAthleteIds.has(loserAthlete.id)) continue;
+      if (!winnerAthlete) continue;
+      if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
+      const pairs: [string, "win" | "loss"][] = [[winnerAthlete.id, "win"]];
+      if (loserAthlete) pairs.push([loserAthlete.id, "loss"]);
+      if (pairs.every(([id]) => existingAthleteIds.has(id))) continue;
 
-      for (const [athleteId, result] of [[winnerAthlete.id, "win"], [loserAthlete.id, "loss"]] as const) {
+      for (const [athleteId, result] of pairs) {
         if (existingAthleteIds.has(athleteId)) continue;
 
         const { error: resErr } = await admin.from("athlete_results").upsert(

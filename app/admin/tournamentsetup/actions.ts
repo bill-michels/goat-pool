@@ -952,16 +952,15 @@ export async function syncRoundResultsFromSofascore(
       const winnerAthlete = findAthlete(winnerName, athleteList);
       const loserAthlete = findAthlete(loserName, athleteList);
 
-      if (eligibleAthleteIds) {
-        if (!winnerAthlete || !loserAthlete) continue;
-        if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
-      }
+      if (!winnerAthlete) { unmatched.push(winnerName); continue; }
+      if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
 
-      for (const [sfName, athlete, result] of [
+      const sfPairs: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [
         [winnerName, winnerAthlete, "win"],
         [loserName, loserAthlete, "loss"],
-      ] as const) {
-        if (!athlete) { unmatched.push(sfName); continue; }
+      ];
+      for (const [sfName, athlete, result] of sfPairs) {
+        if (!athlete) { if (result === "win") unmatched.push(sfName); continue; }
         if (existingAthleteIds.has(athlete.id)) { skipped++; continue; }
         const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
         if (!error) { existingAthleteIds.add(athlete.id); synced++; }
@@ -1079,16 +1078,15 @@ export async function processSofascoreEvents(
     const winnerAthlete = findAthlete(winnerName, athleteList);
     const loserAthlete = findAthlete(loserName, athleteList);
 
-    if (eligibleAthleteIds) {
-      if (!winnerAthlete || !loserAthlete) continue;
-      if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
-    }
+    if (!winnerAthlete) { unmatched.push(winnerName); continue; }
+    if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
 
-    for (const [sfName, athlete, result] of [
+    const sfPairs2: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [
       [winnerName, winnerAthlete, "win"],
       [loserName, loserAthlete, "loss"],
-    ] as const) {
-      if (!athlete) { unmatched.push(sfName); continue; }
+    ];
+    for (const [sfName, athlete, result] of sfPairs2) {
+      if (!athlete) { if (result === "win") unmatched.push(sfName); continue; }
       if (existingAthleteIds.has(athlete.id)) { skipped++; continue; }
       const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
       if (!error) { existingAthleteIds.add(athlete.id); synced++; }
@@ -1199,21 +1197,18 @@ export async function syncRoundFromOddsApi(
     const winnerAthlete = findAthlete(winnerName, athleteList);
     const loserAthlete = findAthlete(loserName, athleteList);
 
-    // Skip the entire match if either athlete isn't eligible for this round.
-    // Track these as "blocked" so the admin can see which matches were found but filtered.
-    if (eligibleAthleteIds) {
-      if (!winnerAthlete || !loserAthlete) continue;
-      if (!eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) {
-        blockedByEligibility.push(`${winnerName} def. ${loserName}`);
-        continue;
-      }
+    if (!winnerAthlete) { unmatched.push(winnerName); continue; }
+    if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) {
+      blockedByEligibility.push(`${winnerName} def. ${loserName}`);
+      continue;
     }
 
-    for (const [sfName, athlete, result] of [
+    const odsPairs: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [
       [winnerName, winnerAthlete, "win"],
       [loserName, loserAthlete, "loss"],
-    ] as const) {
-      if (!athlete) { unmatched.push(sfName); continue; }
+    ];
+    for (const [sfName, athlete, result] of odsPairs) {
+      if (!athlete) { if (result === "win") unmatched.push(sfName); continue; }
       if (existingAthleteIds.has(athlete.id)) { skipped++; continue; }
       const { error } = await processAthleteResult(athlete.id, roundId, result, roundNumber);
       if (!error) { existingAthleteIds.add(athlete.id); synced++; }
