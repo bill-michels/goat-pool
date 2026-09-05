@@ -953,8 +953,9 @@ export async function syncRoundResultsFromSofascore(
       const loserAthlete = findAthlete(loserName, athleteList);
 
       if (!winnerAthlete) { unmatched.push(winnerName); continue; }
-      if (!loserAthlete && roundNumber > 1) continue;
-      if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
+      if (eligibleAthleteIds) {
+        if (!loserAthlete || !eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
+      }
 
       const sfPairs: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [
         [winnerName, winnerAthlete, "win"],
@@ -1080,8 +1081,9 @@ export async function processSofascoreEvents(
     const loserAthlete = findAthlete(loserName, athleteList);
 
     if (!winnerAthlete) { unmatched.push(winnerName); continue; }
-    if (!loserAthlete && roundNumber > 1) continue;
-    if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
+    if (eligibleAthleteIds) {
+      if (!loserAthlete || !eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
+    }
 
     const sfPairs2: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [
       [winnerName, winnerAthlete, "win"],
@@ -1200,10 +1202,11 @@ export async function syncRoundFromOddsApi(
     const loserAthlete = findAthlete(loserName, athleteList);
 
     if (!winnerAthlete) { unmatched.push(winnerName); continue; }
-    if (!loserAthlete && roundNumber > 1) continue;
-    if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) {
-      blockedByEligibility.push(`${winnerName} def. ${loserName}`);
-      continue;
+    if (eligibleAthleteIds) {
+      if (!loserAthlete || !eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) {
+        if (winnerAthlete && loserAthlete) blockedByEligibility.push(`${winnerName} def. ${loserName}`);
+        continue;
+      }
     }
 
     const odsPairs: [string, typeof winnerAthlete | undefined, "win" | "loss"][] = [

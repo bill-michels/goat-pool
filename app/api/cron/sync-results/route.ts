@@ -96,11 +96,15 @@ async function syncTournament(
       const winnerAthlete = findAthlete(wl.winnerName, athletes);
       const loserAthlete = findAthlete(wl.loserName, athletes);
       if (!winnerAthlete) continue;
-      // Round 2+: both athletes must be findable — if the loser can't be matched it's
-      // likely a name-format mismatch, not a genuinely untracked player.
-      // Round 1: allow winner-only for qualifier opponents not in the athlete list.
-      if (!loserAthlete && round.round_number > 1) continue;
-      if (eligibleAthleteIds && !eligibleAthleteIds.has(winnerAthlete.id)) continue;
+      // Round 2+: both athletes must be found AND eligible. The loser eligibility check
+      // is the critical guard against applying Round N-1 events to Round N — the API
+      // returns all completed matches in the window, so a Round 1 loser (not eligible
+      // for Round 3) would otherwise pollute Round 3 results.
+      // Round 1: eligibleAthleteIds is null, so winner-only is allowed for qualifier
+      // opponents not in the athlete list.
+      if (eligibleAthleteIds) {
+        if (!loserAthlete || !eligibleAthleteIds.has(winnerAthlete.id) || !eligibleAthleteIds.has(loserAthlete.id)) continue;
+      }
       const pairs: [string, "win" | "loss"][] = [[winnerAthlete.id, "win"]];
       if (loserAthlete) pairs.push([loserAthlete.id, "loss"]);
       if (pairs.every(([id]) => existingAthleteIds.has(id))) continue;
