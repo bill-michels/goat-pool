@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -1070,8 +1070,6 @@ function ManageTournament({
   const savedCount = activeAthletes.filter((a) => savedResults[a.id!] !== undefined).length;
   const allSavedForActive = activeAthletes.length > 0 && savedCount === activeAthletes.length;
 
-  const autoCompletedRef = useRef<Set<string>>(new Set());
-
   const handleCompleteRound = async (roundData: any, roundNumber: number) => {
     if (completingRound) return;
     setCompletingRound(true);
@@ -1093,14 +1091,6 @@ function ManageTournament({
     router.refresh();
   };
 
-  // Auto-complete when all results for an active round are saved
-  useEffect(() => {
-    if (!activeRoundData || activeRoundData.status !== "active") return;
-    if (!allSavedForActive) return;
-    if (autoCompletedRef.current.has(activeRoundData.id)) return;
-    autoCompletedRef.current.add(activeRoundData.id);
-    handleCompleteRound(activeRoundData, activeRound);
-  }, [allSavedForActive, activeRoundData?.id, activeRoundData?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ maxWidth: "860px", margin: "0 auto", padding: "40px" }}>
