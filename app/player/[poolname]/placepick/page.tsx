@@ -57,6 +57,9 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
   const pickedRoundIds = new Set((existingPicks ?? []).map((p: any) => p.round_id));
   const now = new Date().toISOString();
   const activeRounds = (allRounds ?? []).filter(r => r.status !== "locked" && r.status !== "completed");
+  console.log("[placepick] allRounds", JSON.stringify(allRounds?.map(r => ({ n: r.round_number, s: r.status, dl: r.lock_deadline }))));
+  console.log("[placepick] pickedRoundIds", Array.from(pickedRoundIds));
+  console.log("[placepick] activeRounds", activeRounds.map(r => r.round_number));
   // Prefer a round the player hasn't picked for yet whose deadline is still open.
   // Falls back to any open round (so they can still edit an existing pick),
   // then to any active round as a last resort.
@@ -104,6 +107,9 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
           .eq("result", "win")
       : Promise.resolve({ data: null }),
   ]);
+
+  console.log("[placepick] activeRound", activeRound.round_number, "prevRound", prevRound?.round_number);
+  console.log("[placepick] athletes count", athletes?.length, "prevRoundWinners count", prevRoundWinners?.length);
 
   // Include bye athletes in Round 2 — they advanced without a Round 1 result
   const byeAthleteIds = activeRound.round_number === 2
