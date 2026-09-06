@@ -222,7 +222,7 @@ function CreateTournament({
       tournament_id: tournament.id,
       round_number: i + 1,
       lock_deadline: deadlines[i + 1] ?? null,
-      status: i === 0 ? "active" : "upcoming",
+      status: "active",
     }));
 
     const { data: roundsData, error: rErr } = await supabase
@@ -853,7 +853,7 @@ function ManageTournament({
   const [deleting, setDeleting] = useState(false);
 
   const [activeRound, setActiveRound] = useState(
-    rounds.find((r) => r.status === "active")?.round_number ?? rounds[0]?.round_number ?? 1
+    rounds.find((r) => r.status !== "locked")?.round_number ?? rounds[0]?.round_number ?? 1
   );
   // Confirmed results already saved to DB for the viewed round
   const [savedResults, setSavedResults] = useState<Record<string, "win" | "loss">>({});
@@ -1074,18 +1074,14 @@ function ManageTournament({
     if (completingRound) return;
     setCompletingRound(true);
     await autoAssignMissedPicksForRound(roundData.id, roundNumber, tournament.id);
-    await supabase.from("rounds").update({ status: "completed" }).eq("id", roundData.id);
-    const nextRound = rounds.find((r) => r.round_number === roundNumber + 1);
-    // Only advance next round if it hasn't already been opened or completed
-    if (nextRound && nextRound.status === "upcoming") {
-      await supabase.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-    } else if (!nextRound) {
+    await supabase.from("rounds").update({ status: "locked" }).eq("id", roundData.id);
+    const hasNextRound = rounds.some((r) => r.round_number === roundNumber + 1);
+    if (!hasNextRound) {
       await concludeTournament(tournament.id);
     }
     notifyRoundComplete(roundData.id);
     onRoundsUpdated?.(rounds.map(r =>
-      r.id === roundData.id ? { ...r, status: "completed" } :
-      (nextRound && nextRound.status === "upcoming" && r.id === nextRound.id) ? { ...r, status: "active" } : r
+      r.id === roundData.id ? { ...r, status: "locked" } : r
     ));
     setCompletingRound(false);
     router.refresh();
@@ -1325,10 +1321,10 @@ function ManageTournament({
                 cursor: clickable ? "pointer" : "default",
                 backgroundColor:
                   activeRound === r.round_number ? c.green :
-                  r.status === "completed" ? c.greenMuted : c.grayLighter,
+                  r.status === "locked" ? c.greenMuted : c.grayLighter,
                 color:
                   activeRound === r.round_number ? c.white :
-                  r.status === "completed" ? c.green : c.gray,
+                  r.status === "locked" ? c.green : c.gray,
                 opacity: clickable ? 1 : 0.4,
               }}
             >
@@ -1481,7 +1477,7 @@ function ManageTournament({
             >
               {assigningPicks ? "Assigning..." : "Auto-Assign Missed Picks"}
             </button>
-            {activeRoundData?.status === "active" && activeAthletes.length > 0 && (() => {
+            {activeRoundData && activeRoundData.status !== "locked" && activeAthletes.length > 0 && (() => {
               const isDisabled = completingRound || !allSavedForActive;
               return (
                 <button
@@ -1502,10 +1498,10 @@ function ManageTournament({
             })()}
             <span style={{
               padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
-              backgroundColor: activeRoundData?.status === "completed" ? c.greenMuted : activeRoundData?.status === "active" ? c.amberMuted : c.grayLighter,
-              color: activeRoundData?.status === "completed" ? c.green : activeRoundData?.status === "active" ? c.amber : c.gray,
+              backgroundColor: activeRoundData?.status === "locked" ? c.greenMuted : c.amberMuted,
+              color: activeRoundData?.status === "locked" ? c.green : c.amber,
             }}>
-              {activeRoundData?.status === "completed" ? "Completed" : activeRoundData?.status === "active" ? "In Progress" : "Upcoming"}
+              {activeRoundData?.status === "locked" ? "Locked" : "In Progress"}
             </span>
           </div>
         </div>

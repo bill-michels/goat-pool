@@ -56,7 +56,7 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
   const pickedRoundIds = new Set(
     (allPicks ?? []).filter((p: any) => p.user_id === user.id).map((p: any) => p.round_id)
   );
-  const activeRounds = (rounds ?? []).filter((r: any) => r.status === "active");
+  const activeRounds = (rounds ?? []).filter((r: any) => r.status !== "locked" && r.status !== "completed");
   const activeRound =
     activeRounds.find(r => !pickedRoundIds.has(r.id) && (!r.lock_deadline || r.lock_deadline > now))
     ?? [...activeRounds].reverse().find(r => !r.lock_deadline || r.lock_deadline > now)

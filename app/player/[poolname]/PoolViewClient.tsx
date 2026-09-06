@@ -180,7 +180,7 @@ export default function PoolViewClient({
             <div style={{ backgroundColor: c.white, borderRadius: "12px", border: `1px solid ${c.grayLight}`, overflow: "hidden" }}>
               {rounds.map((r, i) => {
                 const isDone = r.status === "completed" || r.status === "locked";
-                const isActive = r.status === "active";
+                const isActive = !isDone;
                 const isSelected = selectedRound === r.id;
                 const completedRounds = rounds.filter(rr => rr.status === "completed" || rr.status === "locked");
                 const pickIdx = completedRounds.findIndex(cr => cr.id === r.id);

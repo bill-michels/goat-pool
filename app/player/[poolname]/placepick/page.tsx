@@ -56,7 +56,7 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
 
   const pickedRoundIds = new Set((existingPicks ?? []).map((p: any) => p.round_id));
   const now = new Date().toISOString();
-  const activeRounds = (allRounds ?? []).filter(r => r.status === "active");
+  const activeRounds = (allRounds ?? []).filter(r => r.status !== "locked" && r.status !== "completed");
   // Prefer a round the player hasn't picked for yet whose deadline is still open.
   // Falls back to any open round (so they can still edit an existing pick),
   // then to any active round as a last resort.

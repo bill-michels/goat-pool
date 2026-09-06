@@ -18,28 +18,6 @@ async function getAdminUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
-async function activateNextRoundIfNeeded(
-  admin: ReturnType<typeof db>,
-  tournamentId: string,
-  roundId: string,
-  roundNumber: number
-): Promise<void> {
-  const { data: nextRound } = await admin
-    .from("rounds")
-    .select("id, status")
-    .eq("tournament_id", tournamentId)
-    .eq("round_number", roundNumber + 1)
-    .maybeSingle();
-  if (!nextRound || nextRound.status !== "upcoming") return;
-  const { count } = await admin
-    .from("athlete_results")
-    .select("id", { count: "exact", head: true })
-    .eq("round_id", roundId)
-    .eq("result", "win");
-  if ((count ?? 0) > 0) {
-    await admin.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-  }
-}
 
 function roundLabel(roundNumber: number, totalRounds: number): string {
   const fromEnd = totalRounds - roundNumber;
@@ -154,17 +132,6 @@ export async function processAthleteResult(
     { onConflict: "round_id,athlete_id" }
   );
   if (resErr) return { error: resErr.message };
-
-  // Auto-open the next round for picks
-  const { data: round } = await admin.from("rounds").select("tournament_id, round_number").eq("id", roundId).single();
-  if (round) {
-    await admin
-      .from("rounds")
-      .update({ status: "active" })
-      .eq("tournament_id", round.tournament_id)
-      .eq("round_number", round.round_number + 1)
-      .eq("status", "upcoming");
-  }
 
   // 2. Mark athlete eliminated if loss
   if (result === "loss") {
@@ -312,12 +279,12 @@ export async function concludeTournament(
 
   const admin = db();
 
-  // Mark any still-active rounds as completed
+  // Lock any still-open rounds
   await admin
     .from("rounds")
-    .update({ status: "completed" })
+    .update({ status: "locked" })
     .eq("tournament_id", tournamentId)
-    .eq("status", "active");
+    .not("status", "in", '("locked","completed")');
 
   // Mark tournament as concluded
   const { error } = await admin
@@ -969,7 +936,7 @@ export async function syncRoundResultsFromSofascore(
       }
     }
 
-    await activateNextRoundIfNeeded(admin, tournamentId, roundId, roundNumber);
+
     return { synced, unmatched: Array.from(new Set(unmatched)), skipped };
   } catch (e: any) {
     return { synced: 0, unmatched: [], skipped: 0, error: String(e.message ?? e) };
@@ -1097,7 +1064,6 @@ export async function processSofascoreEvents(
     }
   }
 
-  await activateNextRoundIfNeeded(admin, tournamentId, roundId, roundNumber);
   return { synced, unmatched: Array.from(new Set(unmatched)), skipped, sofascoreRoundName: target.name };
 }
 
@@ -1221,6 +1187,5 @@ export async function syncRoundFromOddsApi(
     }
   }
 
-  await activateNextRoundIfNeeded(admin, tournamentId, roundId, roundNumber);
   return { synced, unmatched: Array.from(new Set(unmatched)), skipped, needsManual: Array.from(new Set(needsManual)), blockedByEligibility: Array.from(new Set(blockedByEligibility)) };
 }

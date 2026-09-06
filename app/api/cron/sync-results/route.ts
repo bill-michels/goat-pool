@@ -43,7 +43,7 @@ async function syncTournament(
     .eq("tournament_id", tournament.id)
     .order("round_number");
 
-  const rounds = (allRounds ?? []).filter(r => r.status === "active");
+  const rounds = (allRounds ?? []).filter(r => r.status !== "locked" && r.status !== "completed");
   if (!rounds.length) return { synced: 0, tournamentName: tournament.name };
 
   // Lookup by round_number for eligibility checks
@@ -158,20 +158,6 @@ async function syncTournament(
     }
   }
 
-  // Auto-activate Round N+1 for any active round that now has wins
-  for (const round of rounds) {
-    const nextRound = roundByNumber.get(round.round_number + 1);
-    if (!nextRound || nextRound.status !== "upcoming") continue;
-    const { count } = await admin
-      .from("athlete_results")
-      .select("id", { count: "exact", head: true })
-      .eq("round_id", round.id)
-      .eq("result", "win");
-    if ((count ?? 0) > 0) {
-      await admin.from("rounds").update({ status: "active" }).eq("id", nextRound.id);
-    }
-  }
-
   return { synced: totalSynced, tournamentName: tournament.name };
 }
 
@@ -180,7 +166,7 @@ async function autoAssignExpiredRounds(admin: ReturnType<typeof db>): Promise<nu
   const { data: rounds } = await admin
     .from("rounds")
     .select("id, round_number, tournament_id")
-    .eq("status", "active")
+    .not("status", "in", '("locked","completed")')
     .lt("lock_deadline", now)
     .not("lock_deadline", "is", null);
 

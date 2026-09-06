@@ -205,9 +205,7 @@ export default function ManagePoolClient({
   const [payoutError, setPayoutError] = useState<string | null>(null);
   const [payoutDone, setPayoutDone] = useState(false);
 
-  const completedAndActiveRounds = rounds.filter(
-    (r) => r.status !== "upcoming"
-  );
+  const completedAndActiveRounds = rounds;
   const aliveCount = players.filter((p) => p.status === "alive").length;
 
   const handleInviteMore = async () => {
@@ -363,14 +361,10 @@ export default function ManagePoolClient({
                   {" "}
                   —{" "}
                   {(() => {
-                    const active = rounds.find((r) => r.status === "active");
-                    if (active)
-                      return `${roundLabel(active.round_number, rounds.length)} of ${rounds.length}`;
-                    const completed = rounds.filter(
-                      (r) => r.status === "completed"
-                    ).length;
-                    if (completed === rounds.length) return "Completed";
-                    return `${rounds.length} rounds`;
+                    const open = rounds.find((r) => r.status !== "locked" && r.status !== "completed");
+                    if (open)
+                      return `${roundLabel(open.round_number, rounds.length)} of ${rounds.length}`;
+                    return "Concluded";
                   })()}
                 </>
               )}
@@ -604,8 +598,8 @@ export default function ManagePoolClient({
             </div>
             <div style={{ backgroundColor: c.white, borderRadius: "12px", border: `1px solid ${c.grayLight}`, overflow: "hidden" }}>
               {rounds.map((r, i) => {
-                const isActive = r.status === "active";
                 const isCompleted = r.status === "completed" || r.status === "locked";
+                const isActive = !isCompleted;
                 return (
                   <div
                     key={r.id}
