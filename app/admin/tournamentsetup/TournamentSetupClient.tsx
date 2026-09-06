@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { notifyRoundComplete, notifyRoundResults, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, saveSofascoreConnection, processSofascoreEvents } from "./actions";
+import { notifyRoundResults, deleteTournament, processAthleteResult, undoAthleteResult, autoAssignMissedPicksForRound, concludeTournament, syncRoundFromOddsApi, saveOddsApiSportKey, saveSofascoreConnection, processSofascoreEvents } from "./actions";
 
 const c = {
   green: "#4A7C59",
@@ -837,14 +837,12 @@ function ManageTournament({
   athletes,
   onEditAthletes,
   onEditDetails,
-  onRoundsUpdated,
 }: {
   tournament: any;
   rounds: any[];
   athletes: Athlete[];
   onEditAthletes: () => void;
   onEditDetails: () => void;
-  onRoundsUpdated?: (rounds: any[]) => void;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -867,7 +865,6 @@ function ManageTournament({
   const [undoingId, setUndoingId] = useState<string | null>(null);
   const [assigningPicks, setAssigningPicks] = useState(false);
   const [assignedCount, setAssignedCount] = useState<number | null>(null);
-  const [completingRound, setCompletingRound] = useState(false);
   const [concluding, setConcluding] = useState(false);
   const [notifyingRound, setNotifyingRound] = useState(false);
   const [notifyRoundResult, setNotifyRoundResult] = useState<string | null>(null);
@@ -1068,24 +1065,6 @@ function ManageTournament({
   };
 
   const savedCount = activeAthletes.filter((a) => savedResults[a.id!] !== undefined).length;
-  const allSavedForActive = activeAthletes.length > 0 && savedCount === activeAthletes.length;
-
-  const handleCompleteRound = async (roundData: any, roundNumber: number) => {
-    if (completingRound) return;
-    setCompletingRound(true);
-    await autoAssignMissedPicksForRound(roundData.id, roundNumber, tournament.id);
-    await supabase.from("rounds").update({ status: "locked" }).eq("id", roundData.id);
-    const hasNextRound = rounds.some((r) => r.round_number === roundNumber + 1);
-    if (!hasNextRound) {
-      await concludeTournament(tournament.id);
-    }
-    notifyRoundComplete(roundData.id);
-    onRoundsUpdated?.(rounds.map(r =>
-      r.id === roundData.id ? { ...r, status: "locked" } : r
-    ));
-    setCompletingRound(false);
-    router.refresh();
-  };
 
 
   return (
@@ -1321,10 +1300,10 @@ function ManageTournament({
                 cursor: clickable ? "pointer" : "default",
                 backgroundColor:
                   activeRound === r.round_number ? c.green :
-                  r.status === "locked" ? c.greenMuted : c.grayLighter,
+                  (r.lock_deadline && new Date(r.lock_deadline) < new Date()) ? c.greenMuted : c.grayLighter,
                 color:
                   activeRound === r.round_number ? c.white :
-                  r.status === "locked" ? c.green : c.gray,
+                  (r.lock_deadline && new Date(r.lock_deadline) < new Date()) ? c.green : c.gray,
                 opacity: clickable ? 1 : 0.4,
               }}
             >
@@ -1477,31 +1456,12 @@ function ManageTournament({
             >
               {assigningPicks ? "Assigning..." : "Auto-Assign Missed Picks"}
             </button>
-            {activeRoundData && activeRoundData.status !== "locked" && activeAthletes.length > 0 && (() => {
-              const isDisabled = completingRound || !allSavedForActive;
-              return (
-                <button
-                  onClick={() => { if (activeRoundData && allSavedForActive) handleCompleteRound(activeRoundData, activeRound); }}
-                  disabled={isDisabled}
-                  style={{
-                    padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
-                    border: `1px solid ${allSavedForActive ? c.green : c.grayLight}`,
-                    background: allSavedForActive ? c.green : c.white,
-                    color: allSavedForActive ? c.white : c.gray,
-                    cursor: isDisabled ? "not-allowed" : "pointer",
-                    whiteSpace: "nowrap" as const,
-                  }}
-                >
-                  {completingRound ? "Completing..." : "Complete Round"}
-                </button>
-              );
-            })()}
             <span style={{
               padding: "5px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
-              backgroundColor: activeRoundData?.status === "locked" ? c.greenMuted : c.amberMuted,
-              color: activeRoundData?.status === "locked" ? c.green : c.amber,
+              backgroundColor: activeRoundData?.lock_deadline && new Date(activeRoundData.lock_deadline) < new Date() ? c.greenMuted : c.amberMuted,
+              color: activeRoundData?.lock_deadline && new Date(activeRoundData.lock_deadline) < new Date() ? c.green : c.amber,
             }}>
-              {activeRoundData?.status === "locked" ? "Locked" : "In Progress"}
+              {activeRoundData?.lock_deadline && new Date(activeRoundData.lock_deadline) < new Date() ? "Locked" : "Open"}
             </span>
           </div>
         </div>
@@ -1901,7 +1861,6 @@ export default function TournamentSetupClient({
           athletes={athletes}
           onEditAthletes={() => setView("athletes")}
           onEditDetails={() => setView("create")}
-          onRoundsUpdated={setRounds}
         />
       )}
     </div>
