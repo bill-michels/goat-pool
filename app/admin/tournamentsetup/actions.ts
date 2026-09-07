@@ -369,14 +369,22 @@ export async function notifyRoundResults(
 
   for (const pool of pools) {
     // Get all picks with results for this round
-    const { data: picks } = await admin
-      .from("picks")
-      .select("user_id, athlete_id, result, athletes(name), pool_players(status, lives_remaining, lives_purchased, users(username, email))")
-      .eq("pool_id", pool.id)
-      .eq("round_id", roundId)
-      .not("result", "is", null);
+    const [{ data: picks }, { data: poolPlayers }] = await Promise.all([
+      admin
+        .from("picks")
+        .select("user_id, athlete_id, result, athletes(name), users(username, email)")
+        .eq("pool_id", pool.id)
+        .eq("round_id", roundId)
+        .not("result", "is", null),
+      admin
+        .from("pool_players")
+        .select("user_id, status, lives_remaining, lives_purchased")
+        .eq("pool_id", pool.id),
+    ]);
 
     if (!picks?.length) continue;
+
+    const poolPlayerMap = new Map((poolPlayers ?? []).map((pp: any) => [pp.user_id, pp]));
 
     // Who's already been notified for this round in this pool
     const { data: existing } = await admin
@@ -390,8 +398,8 @@ export async function notifyRoundResults(
     await Promise.allSettled(
       (picks ?? []).map(async (pick: any) => {
         if (alreadyNotified.has(pick.user_id)) return;
-        const playerInfo = pick.pool_players as any;
-        const userInfo = playerInfo?.users as any;
+        const userInfo = pick.users as any;
+        const playerInfo = poolPlayerMap.get(pick.user_id);
         if (!userInfo?.email) return;
 
         const athleteName = (pick.athletes as any)?.name ?? "your pick";
@@ -562,16 +570,24 @@ export async function notifyRoundComplete(roundId: string) {
   );
 
   for (const pool of pools) {
-    const { data: picks } = await admin
-      .from("picks")
-      .select("user_id, athlete_id, athletes(name), pool_players(status, lives_remaining, lives_purchased, users(username, email))")
-      .eq("pool_id", pool.id)
-      .eq("round_id", roundId);
+    const [{ data: picks }, { data: poolPlayers }] = await Promise.all([
+      admin
+        .from("picks")
+        .select("user_id, athlete_id, athletes(name), users(username, email)")
+        .eq("pool_id", pool.id)
+        .eq("round_id", roundId),
+      admin
+        .from("pool_players")
+        .select("user_id, status, lives_remaining, lives_purchased")
+        .eq("pool_id", pool.id),
+    ]);
+
+    const poolPlayerMap = new Map((poolPlayers ?? []).map((pp: any) => [pp.user_id, pp]));
 
     await Promise.allSettled(
       (picks ?? []).map(async (pick: any) => {
-        const playerInfo = pick.pool_players as any;
-        const userInfo = playerInfo?.users as any;
+        const userInfo = pick.users as any;
+        const playerInfo = poolPlayerMap.get(pick.user_id);
         if (!userInfo?.email) return;
 
         const athleteName = (pick.athletes as any)?.name ?? "?";
