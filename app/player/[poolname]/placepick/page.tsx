@@ -49,7 +49,7 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       .order("round_number"),
     adminClient
       .from("picks")
-      .select("id, round_id, athlete_id")
+      .select("id, round_id, athlete_id, result")
       .eq("pool_id", pool.id)
       .eq("user_id", user.id),
   ]);
@@ -167,6 +167,15 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
     ? new Date(activeRound.lock_deadline) < new Date()
     : false;
 
+  // Warn if the player's previous-round pick hasn't been confirmed yet
+  const prevRoundPick = prevRound
+    ? (existingPicks ?? []).find((p: any) => p.round_id === prevRound.id)
+    : null;
+  const unconfirmedPrevPickName: string | null =
+    prevRoundPick && prevRoundPick.result == null && membership.lives_remaining === 1
+      ? ((athletes ?? []).find((a: any) => a.id === prevRoundPick.athlete_id) as any)?.name ?? null
+      : null;
+
   // If locked and no next round is open, send them back to the pool view
   if (isLocked && activeRounds.length === 1) {
     redirect(`/player/${pool.slug}`);
@@ -206,6 +215,7 @@ export default async function PlacePickPage({ params }: { params: { poolname: st
       existingPickAthleteId={existingPickForRound?.athlete_id ?? null}
       isPreviewOnly={false}
       previousRoundLabel={prevRoundLabel}
+      unconfirmedPrevPickName={unconfirmedPrevPickName}
     />
   );
 }

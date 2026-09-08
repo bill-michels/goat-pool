@@ -40,12 +40,13 @@ type Props = {
   existingPickAthleteId: string | null;
   isPreviewOnly: boolean;
   previousRoundLabel: string | null;
+  unconfirmedPrevPickName: string | null;
 };
 
 export default function PlacePickClient({
   username, isCommissioner, pool, activeRound, membership,
   athletes, previousPickNames, existingPickId, existingPickAthleteId,
-  isPreviewOnly, previousRoundLabel,
+  isPreviewOnly, previousRoundLabel, unconfirmedPrevPickName,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(existingPickAthleteId);
   const [search, setSearch] = useState("");
@@ -134,6 +135,20 @@ export default function PlacePickClient({
             </p>
             <p style={{ fontSize: "13px", color: c.amber, margin: 0 }}>
               You can browse available athletes now, but your pick will unlock once all {previousRoundLabel} matches are final.
+            </p>
+          </div>
+        )}
+
+        {unconfirmedPrevPickName && (
+          <div style={{
+            backgroundColor: c.amberMuted, border: `1px solid #FCD34D`,
+            borderRadius: "12px", padding: "14px 18px", marginBottom: "24px",
+          }}>
+            <p style={{ fontSize: "14px", fontWeight: 700, color: c.amber, margin: "0 0 4px" }}>
+              {previousRoundLabel} result pending
+            </p>
+            <p style={{ fontSize: "13px", color: c.amber, margin: 0 }}>
+              Your {previousRoundLabel} pick ({unconfirmedPrevPickName}) hasn&apos;t been confirmed yet. This pick won&apos;t count unless {unconfirmedPrevPickName} advances.
             </p>
           </div>
         )}
