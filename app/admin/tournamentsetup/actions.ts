@@ -3,7 +3,7 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { resend, FROM, appUrl } from "@/lib/resend";
-import { roundResultEmail, pickReminderEmail } from "@/lib/emails";
+import { roundResultEmail, pickReminderEmail, poolConclusionEmail } from "@/lib/emails";
 import { findAthlete } from "@/lib/nameMatch";
 
 const db = () =>
@@ -303,13 +303,59 @@ export async function concludeTournament(
     .select("id")
     .eq("tournament_id", tournamentId);
 
+  const { data: tournament } = await admin
+    .from("tournaments")
+    .select("name")
+    .eq("id", tournamentId)
+    .single();
+
   if (concludedPools?.length) {
     for (const pool of concludedPools) {
+      // Mark survivors as winners
       await admin
         .from("pool_players")
         .update({ status: "winner" })
         .eq("pool_id", pool.id)
         .eq("status", "alive");
+
+      // Fetch all players with their final status and email
+      const [{ data: allPlayers }, { data: poolRow }] = await Promise.all([
+        admin
+          .from("pool_players")
+          .select("user_id, status, users(username, email)")
+          .eq("pool_id", pool.id),
+        admin
+          .from("pools")
+          .select("name, slug")
+          .eq("id", pool.id)
+          .single(),
+      ]);
+
+      if (!allPlayers?.length || !poolRow) continue;
+
+      const winners = allPlayers.filter((p: any) => p.status === "winner");
+      const winnerNames = winners.map((p: any) => (p.users as any)?.username ?? "Unknown");
+      const poolUrl = `${appUrl()}/player/${poolRow.slug}`;
+
+      await Promise.allSettled(
+        allPlayers.map(async (player: any) => {
+          const userInfo = player.users as any;
+          if (!userInfo?.email) return;
+          await resend.emails.send({
+            from: FROM,
+            to: userInfo.email,
+            subject: `${tournament?.name ?? "The tournament"} has concluded — ${poolRow.name}`,
+            html: poolConclusionEmail({
+              username: userInfo.username ?? "there",
+              poolName: poolRow.name,
+              tournamentName: tournament?.name ?? "The tournament",
+              isWinner: player.status === "winner",
+              winnerNames,
+              poolUrl,
+            }),
+          });
+        })
+      );
     }
   }
 

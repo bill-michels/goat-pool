@@ -94,6 +94,42 @@ export function joinRequestEmail({
   `);
 }
 
+export function poolConclusionEmail({
+  username, poolName, tournamentName, isWinner, winnerNames, poolUrl,
+}: {
+  username: string;
+  poolName: string;
+  tournamentName: string;
+  isWinner: boolean;
+  winnerNames: string[];
+  poolUrl: string;
+}) {
+  const hasWinners = winnerNames.length > 0;
+  const winnersText = winnerNames.length === 1
+    ? winnerNames[0]
+    : winnerNames.slice(0, -1).join(", ") + " and " + winnerNames[winnerNames.length - 1];
+
+  const resultBanner = isWinner
+    ? `<div style="background:#E8F0EA;border-radius:10px;padding:14px 18px;margin-bottom:24px;"><p style="font-size:15px;font-weight:700;color:${green};margin:0;">🏆 You're a winner!</p></div>`
+    : `<div style="background:#FEF2F2;border-radius:10px;padding:14px 18px;margin-bottom:24px;"><p style="font-size:15px;font-weight:700;color:${red};margin:0;">Better luck next time.</p></div>`;
+
+  const summaryText = hasWinners
+    ? isWinner
+      ? winnerNames.length === 1
+        ? `You were the last one standing in <strong style="color:${charcoal};">${poolName}</strong>. Congratulations!`
+        : `You and ${winnerNames.length - 1} other${winnerNames.length - 1 > 1 ? "s" : ""} (${winnersText}) survived to the end of <strong style="color:${charcoal};">${poolName}</strong>.`
+      : `<strong style="color:${charcoal};">${winnersText}</strong> survived to the end of <strong style="color:${charcoal};">${poolName}</strong>.`
+    : `No one survived <strong style="color:${charcoal};">${poolName}</strong>. The pot rolls over or gets refunded per the pool rules.`;
+
+  return base(`
+    <h1 style="font-size:22px;font-weight:800;color:${charcoal};margin:0 0 6px;letter-spacing:-0.5px;">${tournamentName} is over</h1>
+    <p style="font-size:15px;color:${gray};margin:0 0 24px;">Hi ${username}, the pool has concluded.</p>
+    ${resultBanner}
+    <p style="font-size:14px;color:${gray};margin:0 0 24px;">${summaryText}</p>
+    <div style="text-align:center;">${btn(poolUrl, "View Final Standings")}</div>
+  `);
+}
+
 export function roundResultEmail({
   username, poolName, roundLabel, pickAthleteName, result, livesRemaining, livesPurchased, isEliminated, poolUrl,
 }: {
