@@ -294,9 +294,9 @@ export default function PoolViewClient({
                 {p.username}{p.isYou ? " (you)" : ""}
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: p.status === "alive" ? c.green : c.red }} />
-                <span style={{ fontSize: "13px", fontWeight: 500, color: p.status === "alive" ? c.green : c.red }}>
-                  {p.status === "alive" ? "Alive" : "Out"}
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: p.status === "winner" ? c.green : p.status === "alive" ? c.green : c.red }} />
+                <span style={{ fontSize: "13px", fontWeight: 500, color: p.status === "winner" ? c.green : p.status === "alive" ? c.green : c.red }}>
+                  {p.status === "winner" ? "Winner" : p.status === "alive" ? "Alive" : "Out"}
                 </span>
               </span>
               <span style={{ fontWeight: 600, color: p.livesRemaining > 0 ? c.charcoal : c.gray }}>

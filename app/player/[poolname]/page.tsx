@@ -98,12 +98,14 @@ export default async function PlayerPoolViewPage({ params }: { params: { poolnam
   }).sort((a: any, b: any) => {
     if (a.isYou) return -1;
     if (b.isYou) return 1;
-    if (a.status === "alive" && b.status !== "alive") return -1;
-    if (b.status === "alive" && a.status !== "alive") return 1;
+    const aActive = a.status === "alive" || a.status === "winner";
+    const bActive = b.status === "alive" || b.status === "winner";
+    if (aActive && !bActive) return -1;
+    if (bActive && !aActive) return 1;
     return b.livesRemaining - a.livesRemaining;
   });
 
-  const aliveCount = players.filter(p => p.status === "alive").length;
+  const aliveCount = players.filter(p => p.status === "alive" || p.status === "winner").length;
   const eliminatedCount = players.filter(p => p.status === "eliminated").length;
 
   const roundsForView = (rounds ?? []).map((r: any) => ({
