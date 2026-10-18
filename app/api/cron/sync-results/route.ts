@@ -190,31 +190,6 @@ async function autoAssignExpiredRounds(admin: ReturnType<typeof db>): Promise<nu
       .order("name");
     if (!allAthletes?.length) continue;
 
-    // For rounds > 1, restrict eligible athletes to those who won the previous round.
-    // Also include bye athletes for round 2 (they advanced without a round 1 result).
-    let eligibleAthleteIds: Set<string> | null = null;
-    if (round.round_number > 1) {
-      const { data: allRounds } = await admin
-        .from("rounds")
-        .select("id, round_number")
-        .eq("tournament_id", round.tournament_id);
-      const prevRound = (allRounds ?? []).find(r => r.round_number === round.round_number - 1);
-      if (prevRound) {
-        const { data: prevWinners } = await admin
-          .from("athlete_results")
-          .select("athlete_id")
-          .eq("round_id", prevRound.id)
-          .eq("result", "win");
-        const byeIds = round.round_number === 2
-          ? (allAthletes ?? []).filter((a: any) => a.has_bye).map((a: any) => a.id)
-          : [];
-        eligibleAthleteIds = new Set([
-          ...(prevWinners ?? []).map((r: any) => r.athlete_id as string),
-          ...byeIds,
-        ]);
-      }
-    }
-
     for (const pool of pools) {
       const { data: alivePlayers } = await admin
         .from("pool_players").select("user_id")
@@ -239,7 +214,6 @@ async function autoAssignExpiredRounds(admin: ReturnType<typeof db>): Promise<nu
         const available = (allAthletes ?? []).filter((a: any) => {
           if (prevIds.has(a.id)) return false;
           if (round.round_number === 1 && a.has_bye) return false;
-          if (eligibleAthleteIds && !eligibleAthleteIds.has(a.id)) return false;
           return true;
         });
         if (!available.length) continue;
@@ -289,12 +263,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "No active tournaments with Odds API sport key configured." });
   }
 
-  const [results, autoAssigned] = await Promise.all([
-    Promise.allSettled(
-      tournaments.map(t => syncTournament(admin, t as any, dailyTournamentIds.has(t.id) ? 1 : 3))
-    ),
-    autoAssignExpiredRounds(admin),
-  ]);
+  // Sync first so athlete statuses are up to date, then auto-assign from the correct pool
+  const results = await Promise.allSettled(
+    tournaments.map(t => syncTournament(admin, t as any, dailyTournamentIds.has(t.id) ? 1 : 3))
+  );
+  const autoAssigned = await autoAssignExpiredRounds(admin);
 
   const summary = results.map((r, i) =>
     r.status === "fulfilled"
