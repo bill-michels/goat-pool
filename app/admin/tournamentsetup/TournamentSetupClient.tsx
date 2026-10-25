@@ -559,7 +559,9 @@ function AddAthletes({
     }
 
     setAthletes((prev) => {
-      const combined = [...prev, ...parsed];
+      const existingNames = new Set(prev.map((a) => a.name.trim().toLowerCase()));
+      const unique = parsed.filter((a) => !existingNames.has(a.name.trim().toLowerCase()));
+      const combined = [...prev, ...unique];
       return combined.sort((a, b) => {
         if (a.seed !== null && b.seed !== null) return a.seed - b.seed;
         if (a.seed !== null) return -1;
@@ -613,10 +615,17 @@ function AddAthletes({
     }
 
     if (newAthletes.length > 0) {
+      const seen = new Set<string>();
+      const dedupedAthletes = newAthletes.filter((a) => {
+        const key = a.name.trim().toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
       const { data, error: err } = await supabase
         .from("athletes")
         .upsert(
-          newAthletes.map((a) => ({
+          dedupedAthletes.map((a) => ({
             tournament_id: tournament.id,
             name: a.name,
             seed: a.seed,
