@@ -268,8 +268,8 @@ function TournamentsSection({ tournaments }: { tournaments: ActiveTournament[] }
               flexDirection: "column",
               gap: "16px",
             }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}>
                   <span style={{
                     fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
                     padding: "2px 8px", borderRadius: "6px",
