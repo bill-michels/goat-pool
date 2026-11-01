@@ -120,7 +120,7 @@ function Nav() {
           fontWeight: 500,
           textDecoration: "none",
         }}>
-          Find a Pool
+          Join Another Pool
         </Link>
 
         <div style={{ width: "1px", height: "24px", backgroundColor: c.grayLight, margin: "0 8px" }} />
@@ -213,8 +213,10 @@ function Hero({ hasOpenPools }: { hasOpenPools: boolean }) {
             fontWeight: 600,
             textDecoration: "none",
             boxShadow: "0 2px 8px rgba(74,124,89,0.3)",
+            minWidth: "200px",
+            textAlign: "center",
           }}>
-            Start a Pool
+            Start Your Own Pool
           </Link>
           <Link href="/pools" style={{
             padding: "14px 28px",
@@ -225,8 +227,10 @@ function Hero({ hasOpenPools }: { hasOpenPools: boolean }) {
             fontSize: "16px",
             fontWeight: 600,
             textDecoration: "none",
+            minWidth: "200px",
+            textAlign: "center",
           }}>
-            {hasOpenPools ? "Find an Open Pool" : "Find a Pool"}
+            Join Another Pool
           </Link>
         </div>
       </div>
@@ -238,11 +242,11 @@ function TournamentsSection({ tournaments }: { tournaments: ActiveTournament[] }
   if (tournaments.length === 0) return null;
 
   return (
-    <section style={{ padding: "56px 40px", backgroundColor: c.cream }}>
+    <section style={{ padding: "56px 40px 32px", backgroundColor: c.cream }}>
       <div style={{ maxWidth: "900px", margin: "0 auto" }}>
-        <div style={{ marginBottom: "28px" }}>
+        <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <p style={{ fontSize: "13px", fontWeight: 700, color: c.green, textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 6px" }}>
-            Live Tournaments
+            Available Tournaments
           </p>
           <h2 style={{ fontSize: "28px", fontWeight: 800, color: c.charcoal, margin: 0, letterSpacing: "-0.5px" }}>
             Start a pool for a tournament
@@ -292,7 +296,7 @@ function TournamentsSection({ tournaments }: { tournaments: ActiveTournament[] }
                 textAlign: "center",
                 marginTop: "auto",
               }}>
-                Start a Pool →
+                Start Your Own Pool →
               </Link>
             </div>
           ))}
@@ -635,8 +639,8 @@ function Footer() {
               </p>
               <Link href="/#how-it-works" style={linkStyle}>How It Works</Link>
               <Link href="/#pricing" style={linkStyle}>Pricing</Link>
-              <Link href="/pools" style={linkStyle}>Find a Pool</Link>
-              <Link href="/commissioner/startpool" style={linkStyle}>Start a Pool</Link>
+              <Link href="/pools" style={linkStyle}>Join Another Pool</Link>
+              <Link href="/commissioner/startpool" style={linkStyle}>Start Your Own Pool</Link>
               <Link href="/login" style={linkStyle}>Sign In</Link>
             </div>
             <div>
