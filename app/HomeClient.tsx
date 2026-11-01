@@ -284,20 +284,35 @@ function TournamentsSection({ tournaments }: { tournaments: ActiveTournament[] }
                   {t.numRounds} rounds · {t.poolCount === 0 ? "No pools yet" : t.poolCount === 1 ? "1 pool running" : `${t.poolCount} pools running`}
                 </p>
               </div>
-              <Link href="/commissioner/startpool" style={{
-                display: "block",
-                padding: "9px 16px",
-                borderRadius: "8px",
-                background: c.green,
-                color: c.white,
-                fontSize: "14px",
-                fontWeight: 600,
-                textDecoration: "none",
-                textAlign: "center",
-                marginTop: "auto",
-              }}>
-                Start Your Own Pool →
-              </Link>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "auto" }}>
+                <Link href="/commissioner/startpool" style={{
+                  display: "block",
+                  padding: "9px 16px",
+                  borderRadius: "8px",
+                  background: c.green,
+                  color: c.white,
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  textAlign: "center",
+                }}>
+                  Start Your Own Pool for this Tournament
+                </Link>
+                <Link href="/pools" style={{
+                  display: "block",
+                  padding: "9px 16px",
+                  borderRadius: "8px",
+                  border: `1.5px solid ${c.grayLight}`,
+                  background: c.white,
+                  color: c.charcoal,
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  textAlign: "center",
+                }}>
+                  Look for Available Pools for this Tournament
+                </Link>
+              </div>
             </div>
           ))}
         </div>
