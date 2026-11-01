@@ -96,16 +96,23 @@ export default async function CommissionerDashboard() {
     .eq("id", user.id)
     .single();
 
-  const { data: pools } = await adminClient
-    .from("pools")
-    .select(`
-      id, name, slug, status, take_rate,
-      tournaments(name),
-      pool_players(id, status, lives_purchased),
-      payments(amount, status)
-    `)
-    .eq("commissioner_id", user.id)
-    .order("created_at", { ascending: false });
+  const [{ data: pools }, { data: tournaments }] = await Promise.all([
+    adminClient
+      .from("pools")
+      .select(`
+        id, name, slug, status, take_rate,
+        tournaments(name),
+        pool_players(id, status, lives_purchased),
+        payments(amount, status)
+      `)
+      .eq("commissioner_id", user.id)
+      .order("created_at", { ascending: false }),
+    adminClient
+      .from("tournaments")
+      .select("id, name, num_rounds, status")
+      .in("status", ["upcoming", "active"])
+      .order("name"),
+  ]);
 
   const role = userData?.role ?? "player";
   if (role === "player" && !pools?.length) redirect("/player");
@@ -172,15 +179,40 @@ export default async function CommissionerDashboard() {
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {livePools.map((pool) => <PoolCard key={pool.id} pool={pool} />)}
             </div>
+          ) : (tournaments ?? []).length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min((tournaments ?? []).length, 3)}, 1fr)`, gap: "12px" }}>
+              {(tournaments ?? []).map((t: any) => (
+                <div key={t.id} style={{
+                  backgroundColor: c.white, borderRadius: "14px", padding: "24px",
+                  border: `1px solid ${c.grayLight}`, display: "flex", flexDirection: "column", gap: "16px",
+                }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}>
+                      <span style={{
+                        fontSize: "11px", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.5px",
+                        padding: "2px 8px", borderRadius: "6px",
+                        backgroundColor: t.status === "active" ? c.greenMuted : c.grayLighter,
+                        color: t.status === "active" ? c.green : c.gray,
+                      }}>
+                        {t.status === "active" ? "In Progress" : "Upcoming"}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "17px", fontWeight: 700, color: c.charcoal, margin: "0 0 4px" }}>{t.name}</p>
+                    <p style={{ fontSize: "13px", color: c.gray, margin: 0 }}>{t.num_rounds} rounds</p>
+                  </div>
+                  <Link href="/commissioner/startpool" style={{
+                    display: "block", padding: "9px 16px", borderRadius: "8px",
+                    background: c.green, color: c.white, fontSize: "14px", fontWeight: 600,
+                    textDecoration: "none", textAlign: "center" as const, marginTop: "auto",
+                  }}>
+                    Start a Pool for this Tournament
+                  </Link>
+                </div>
+              ))}
+            </div>
           ) : (
             <div style={{ backgroundColor: c.white, borderRadius: "14px", padding: "32px", border: `1px solid ${c.grayLight}`, textAlign: "center" }}>
-              <p style={{ fontSize: "16px", color: c.gray, margin: "0 0 16px" }}>No active pools yet.</p>
-              <Link href="/commissioner/startpool" style={{
-                padding: "10px 20px", borderRadius: "10px", background: c.green,
-                color: c.white, fontSize: "14px", fontWeight: 600, textDecoration: "none",
-              }}>
-                Start Your First Pool
-              </Link>
+              <p style={{ fontSize: "16px", color: c.gray, margin: "0 0 16px" }}>No active tournaments available right now.</p>
             </div>
           )}
         </div>
