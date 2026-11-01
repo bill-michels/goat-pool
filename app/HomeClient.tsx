@@ -155,7 +155,7 @@ function Nav() {
 
 function Hero({ hasOpenPools }: { hasOpenPools: boolean }) {
   return (
-    <section style={{ padding: "80px 40px", textAlign: "center", backgroundColor: c.cream }}>
+    <section style={{ padding: "80px 40px 40px", textAlign: "center", backgroundColor: c.cream }}>
       <div style={{ maxWidth: "700px", margin: "0 auto" }}>
         <div style={{
           display: "inline-flex",
@@ -242,7 +242,7 @@ function TournamentsSection({ tournaments }: { tournaments: ActiveTournament[] }
   if (tournaments.length === 0) return null;
 
   return (
-    <section style={{ padding: "56px 40px 32px", backgroundColor: c.cream }}>
+    <section style={{ padding: "28px 40px 32px", backgroundColor: c.cream }}>
       <div style={{ maxWidth: "900px", margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <p style={{ fontSize: "13px", fontWeight: 700, color: c.green, textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 6px" }}>
