@@ -28,12 +28,19 @@ export default async function HomePage() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const { data: pools } = await admin
-    .from("pools")
-    .select("id, name, slug, fee_per_life, tournaments(name), pool_players(count)")
-    .eq("allow_join_requests", true)
-    .eq("status", "active")
-    .order("name");
+  const [{ data: pools }, { data: tournaments }] = await Promise.all([
+    admin
+      .from("pools")
+      .select("id, name, slug, fee_per_life, tournaments(name), pool_players(count)")
+      .eq("allow_join_requests", true)
+      .eq("status", "active")
+      .order("name"),
+    admin
+      .from("tournaments")
+      .select("id, name, num_rounds, status, pools(count)")
+      .in("status", ["upcoming", "active"])
+      .order("name"),
+  ]);
 
   const openPools = (pools ?? []).map((p: any) => ({
     id: p.id as string,
@@ -44,5 +51,13 @@ export default async function HomePage() {
     playerCount: (p.pool_players?.[0]?.count ?? 0) as number,
   }));
 
-  return <HomeClient openPools={openPools} />;
+  const activeTournaments = (tournaments ?? []).map((t: any) => ({
+    id: t.id as string,
+    name: t.name as string,
+    numRounds: (t.num_rounds ?? 0) as number,
+    status: t.status as string,
+    poolCount: (t.pools?.[0]?.count ?? 0) as number,
+  }));
+
+  return <HomeClient openPools={openPools} activeTournaments={activeTournaments} />;
 }

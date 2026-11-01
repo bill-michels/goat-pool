@@ -23,6 +23,14 @@ type OpenPool = {
   playerCount: number;
 };
 
+type ActiveTournament = {
+  id: string;
+  name: string;
+  numRounds: number;
+  status: string;
+  poolCount: number;
+};
+
 function LogoIcon({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
@@ -220,6 +228,74 @@ function Hero({ hasOpenPools }: { hasOpenPools: boolean }) {
           }}>
             {hasOpenPools ? "Find an Open Pool" : "Find a Pool"}
           </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TournamentsSection({ tournaments }: { tournaments: ActiveTournament[] }) {
+  if (tournaments.length === 0) return null;
+
+  return (
+    <section style={{ padding: "56px 40px", backgroundColor: c.cream }}>
+      <div style={{ maxWidth: "900px", margin: "0 auto" }}>
+        <div style={{ marginBottom: "28px" }}>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: c.green, textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 6px" }}>
+            Live Tournaments
+          </p>
+          <h2 style={{ fontSize: "28px", fontWeight: 800, color: c.charcoal, margin: 0, letterSpacing: "-0.5px" }}>
+            Start a pool for a tournament
+          </h2>
+        </div>
+
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${Math.min(tournaments.length, 3)}, 1fr)`,
+          gap: "12px",
+        }}>
+          {tournaments.map((t) => (
+            <div key={t.id} style={{
+              backgroundColor: c.white,
+              border: `1px solid ${c.grayLight}`,
+              borderRadius: "14px",
+              padding: "20px 24px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+            }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <span style={{
+                    fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
+                    padding: "2px 8px", borderRadius: "6px",
+                    backgroundColor: t.status === "active" ? c.greenMuted : c.grayLighter,
+                    color: t.status === "active" ? c.green : c.gray,
+                  }}>
+                    {t.status === "active" ? "In Progress" : "Upcoming"}
+                  </span>
+                </div>
+                <p style={{ fontSize: "17px", fontWeight: 700, color: c.charcoal, margin: "0 0 4px" }}>{t.name}</p>
+                <p style={{ fontSize: "13px", color: c.gray, margin: 0 }}>
+                  {t.numRounds} rounds · {t.poolCount === 0 ? "No pools yet" : t.poolCount === 1 ? "1 pool running" : `${t.poolCount} pools running`}
+                </p>
+              </div>
+              <Link href="/commissioner/startpool" style={{
+                display: "block",
+                padding: "9px 16px",
+                borderRadius: "8px",
+                background: c.green,
+                color: c.white,
+                fontSize: "14px",
+                fontWeight: 600,
+                textDecoration: "none",
+                textAlign: "center",
+                marginTop: "auto",
+              }}>
+                Start a Pool →
+              </Link>
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -586,11 +662,12 @@ function Footer() {
   );
 }
 
-export default function HomeClient({ openPools }: { openPools: OpenPool[] }) {
+export default function HomeClient({ openPools, activeTournaments }: { openPools: OpenPool[]; activeTournaments: ActiveTournament[] }) {
   return (
     <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: "#2D2D2D", minHeight: "100vh" }}>
       <Nav />
       <Hero hasOpenPools={openPools.length > 0} />
+      <TournamentsSection tournaments={activeTournaments} />
       <OpenPoolsSection pools={openPools} />
       <HowItWorks />
       <ExamplePool />
