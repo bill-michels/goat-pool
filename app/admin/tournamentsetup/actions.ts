@@ -1142,7 +1142,7 @@ export async function syncRoundFromOddsApi(
   if (!apiKey) return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: "ODDS_API_KEY not configured." };
 
   const res = await fetch(
-    `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${apiKey}&daysFrom=3`
+    `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${apiKey}&daysFrom=7`
   );
   if (!res.ok) {
     return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: `Odds API returned ${res.status}` };

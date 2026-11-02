@@ -10,7 +10,7 @@ const db = () =>
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-async function fetchOddsApiScores(sportKey: string, daysFrom: number = 3): Promise<any[]> {
+async function fetchOddsApiScores(sportKey: string, daysFrom: number = 7): Promise<any[]> {
   const key = process.env.ODDS_API_KEY;
   if (!key) return [];
   const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/scores/?apiKey=${key}&daysFrom=${daysFrom}`;
@@ -35,7 +35,7 @@ function getWinnerLoser(event: any): { winnerName: string; loserName: string } |
 async function syncTournament(
   admin: ReturnType<typeof db>,
   tournament: { id: string; name: string; odds_api_sport_key: string },
-  daysFrom: number = 3
+  daysFrom: number = 7
 ): Promise<{ synced: number; tournamentName: string }> {
   const { data: allRounds } = await admin
     .from("rounds")
@@ -265,7 +265,7 @@ export async function GET(request: Request) {
 
   // Sync first so athlete statuses are up to date, then auto-assign from the correct pool
   const results = await Promise.allSettled(
-    tournaments.map(t => syncTournament(admin, t as any, dailyTournamentIds.has(t.id) ? 1 : 3))
+    tournaments.map(t => syncTournament(admin, t as any, dailyTournamentIds.has(t.id) ? 1 : 7))
   );
   const autoAssigned = await autoAssignExpiredRounds(admin);
 
