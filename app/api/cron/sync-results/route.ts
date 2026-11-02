@@ -17,7 +17,17 @@ async function fetchOddsApiScores(sportKey: string, daysFrom: number = 3): Promi
   const res = await fetch(url);
   if (!res.ok) return [];
   const data = await res.json();
-  return (data as any[]).filter(e => e.completed === true);
+  return (data as any[]).filter(e => {
+    if (e.completed === true) return true;
+    // Treat as complete if a player has won 2+ sets (best-of-3) even if the API
+    // hasn't flipped completed yet — common delay with tennis feeds.
+    const scores: Array<{ score: string }> = e.scores ?? [];
+    if (scores.length === 2) {
+      const maxSets = Math.max(...scores.map(s => parseFloat(s.score ?? "0")));
+      if (maxSets >= 2) return true;
+    }
+    return false;
+  });
 }
 
 function getWinnerLoser(event: any): { winnerName: string; loserName: string } | null {
