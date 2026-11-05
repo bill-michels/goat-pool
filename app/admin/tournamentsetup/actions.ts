@@ -1163,9 +1163,13 @@ export async function syncRoundFromOddsApi(
 
   if (!completed.length) {
     const inProgress = events.filter(e => e.completed === false).length;
+    const sample = events.slice(0, 2).map(e => ({
+      teams: (e.scores ?? []).map((s: any) => `${s.name}: ${s.score}`).join(" vs ") || "no scores",
+      completed: e.completed,
+    }));
     const detail = events.length === 0
       ? "Odds API returned 0 events — sport key may be wrong or tournament not yet listed."
-      : `Odds API returned ${events.length} events (${inProgress} in progress, 0 completed) — scores may not be finalised yet.`;
+      : `Odds API returned ${events.length} events (${inProgress} in progress, 0 completed) — scores may not be finalised yet. Sample: ${JSON.stringify(sample)}`;
     return { synced: 0, unmatched: [], skipped: 0, needsManual: [], blockedByEligibility: [], error: detail };
   }
 
